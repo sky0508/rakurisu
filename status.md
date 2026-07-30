@@ -28,11 +28,15 @@ lead-harvest パイプラインを実行・監視する webapp。要件は `docs
 - [ ] 社内共有（Slack 等に URL）
 - [ ] モックへのフィードバック回収
 
-### P1 実行監視 MVP（未着手・ブロック中）
-- [ ] **spec §7 の実行アーキテクチャ確定（A ローカル常駐 / B DB集約）** ← 最優先ブロッカー
-- [ ] 確定後 `docs/plan.md` 作成
-- [ ] ジョブ一覧・状態・stage 進捗を実データ表示（F4/F5/F7）
-- [ ] 案件ディレクトリ（`リスト作成/<案件>/`）との紐付け
+### P1 実行監視 MVP（閲覧・plan 済み）
+- [x] **実行アーキテクチャ確定 → 案 B（DB集約, Neon）**（2026-07-31）
+- [x] `docs/plan.md` 作成（Next.js16+Neon+Drizzle+iron-session、報告シム設計）
+- [ ] Next.js scaffold + DESIGN トークン移植（モックは docs/mock.html へ退避）
+- [ ] Drizzle スキーマ（jobs/job_stages/deliverables/job_metrics）
+- [ ] iron-session パスワードゲート
+- [ ] 一覧+詳細（4 state）を Neon 読み取りで実装
+- [ ] `runner/lh_sync.py`（案件 data dir → Neon 同期）で実案件1本を表示
+- [ ] Vercel 再デプロイ（Next.js 化）→ 社内共有
 
 ### P2 起票・実行トリガー（未着手）
 - [ ] 画面から新規ジョブ作成 → 試走 → GO → 本番キック（F1/F3）
@@ -46,13 +50,14 @@ lead-harvest パイプラインを実行・監視する webapp。要件は `docs
 | # | 内容 | 解消の道 |
 |---|---|---|
 | B1 | GitHub 認証（device code 期限切れ ×2） | `gh auth login --with-token`（PAT）or Vercel CLI 先行デプロイ |
-| B2 | 実行アーキテクチャ未決（spec §7） | Sora が A/B を判断 → P1 の plan へ |
+| B2 | ~~実行アーキテクチャ未決~~ | ✅ 解消: 案 B 確定（2026-07-31） |
+| B3 | Neon プロジェクト + env 未セット | Sora が Neon 作成（marchon/個人 要判断）→ DATABASE_URL |
 
 ## 次アクション（直近）
 
-1. 共有 URL を出す: **token で gh 認証 → repo → push → Vercel**、または **Vercel CLI 先行デプロイ**（vercel は認証済み）
-2. spec.md をレビュー → §7 アーキテクチャと §10 未決事項を決める
-3. 決まったら P1 の `plan.md` を作成
+1. **plan.md をレビュー** → §7 残る決定（queued/failed・Neon の marchon/個人・認証・data dir 参照）を潰す
+2. 共有 URL を出す: token で gh 認証 or **Vercel CLI 先行デプロイ**（vercel 認証済み）。※ P1 で Next.js 化するので、モックの静的共有は「今すぐ見せたい」時のみ
+3. 決定が揃ったら P1 実装着手（Neon 作成は Sora、それ以外は連続実行）
 
 ## セッションログ
 
