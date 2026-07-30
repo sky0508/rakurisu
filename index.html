@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ラクリス — quiet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* quiet-product — 白い主役面 + 暖チャコールの脇役面 */
+    --side:#1E1F21; --side-tx:#A8A7A4; --side-hi:#FFFFFF; --side-line:rgba(255,255,255,.08);
+    --bg:#F7F6F4; --sheet:#FFFFFF;
+    --ink:#1F1E1B; --ink2:#6E6C66; --ink3:#9C9A94;
+    --line:#ECEAE6; --line2:#DEDBD5;
+    --accent:#C4532F; --accent-hover:#B04A29;   /* CTA だけ */
+    /* tonal pairs — データにだけ */
+    --ok-bg:#E5F2E9;  --ok-tx:#256C43;
+    --run-bg:#E3EDF7; --run-tx:#2A5E96;
+    --wait-bg:#FBF0D7; --wait-tx:#8A6A1C;
+    --mut-bg:#EFEDEA; --mut-tx:#6E6C66;
+    --flag-bg:#FBF0D7; --flag-tx:#8A6A1C;
+    --sans:"Noto Sans JP",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.75;-webkit-font-smoothing:antialiased;overflow-wrap:anywhere;word-break:normal}
+  .num{font-variant-numeric:tabular-nums}
+  .code{font-family:var(--mono);font-size:11.5px;color:var(--ink3)}
+  button{font-family:inherit}
+
+  .app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+
+  /* sidebar — 脇役の面（1 枚だけ） */
+  .side{background:var(--side);color:var(--side-tx);padding:14px 0;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 18px 16px;color:var(--side-hi);font-size:14px;font-weight:700}
+  .brand .mark{width:24px;height:24px;border-radius:7px;display:block}
+  .navsec{padding:10px 10px 2px}
+  .navlbl{font-size:11px;color:#7C7B78;padding:0 10px 6px}
+  .nav{display:flex;flex-direction:column;gap:1px}
+  .nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:var(--side-tx);text-decoration:none;font-size:12.5px}
+  .nav a:hover{background:rgba(255,255,255,.06);color:var(--side-hi)}
+  .nav a.on{background:rgba(255,255,255,.10);color:var(--side-hi);font-weight:500}
+  .nav .ico{width:16px;text-align:center;opacity:.75}
+  .nav .badge{margin-left:auto;font-size:11px;color:var(--side-tx)}
+  .side-foot{margin-top:auto;padding:12px 18px;border-top:1px solid var(--side-line);font-size:11.5px;line-height:1.7;color:#7C7B78}
+  .side-foot b{color:var(--side-tx);font-weight:500}
+
+  /* main sheet — 主役の面 */
+  .main{background:var(--sheet);min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:14px;padding:14px 28px;border-bottom:1px solid var(--line)}
+  .topbar h1{margin:0;font-size:23px;font-weight:700;letter-spacing:-.01em}
+  .topbar .sub{font-size:12px;color:var(--ink3)}
+  .topbar .spacer{flex:1}
+  .btn{font-size:12.5px;font-weight:500;padding:7px 14px;border:1px solid var(--line2);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;transition:background .1s,border-color .1s}
+  .btn:hover{background:var(--bg)}
+  .btn:focus-visible{outline:2px solid var(--run-tx);outline-offset:2px}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+
+  .body2{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:0}
+
+  /* queue list */
+  .queue{border-right:1px solid var(--line);overflow:auto}
+  .qhead{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 6px}
+  .qhead .t{font-size:12.5px;font-weight:700}
+  .qhead .n{font-size:11.5px;color:var(--ink3)}
+  .job{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 18px;cursor:pointer;display:grid;gap:5px}
+  .job:hover{background:var(--bg)}
+  .job.active{background:#F4F1EC}
+  .job:focus-visible{outline:2px solid var(--run-tx);outline-offset:-2px}
+  .job .r1{display:flex;align-items:center;gap:8px}
+  .job .title{font-size:13px;font-weight:500;line-height:1.5}
+  .job .r2{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--ink3)}
+
+  /* tag — tonal pair, データにだけ */
+  .tag{display:inline-flex;align-items:center;font-size:11px;font-weight:500;padding:2px 8px;border-radius:6px;white-space:nowrap}
+  .tag.done{background:var(--ok-bg);color:var(--ok-tx)}
+  .tag.run{background:var(--run-bg);color:var(--run-tx)}
+  .tag.wait{background:var(--wait-bg);color:var(--wait-tx)}
+  .tag.split{background:var(--mut-bg);color:var(--mut-tx)}
+
+  /* detail */
+  .detail{overflow:auto;padding:22px 28px 48px;min-width:0}
+  .dhead{display:grid;gap:6px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .dhead .kick{display:flex;align-items:center;gap:10px}
+  .dhead h2{margin:0;font-size:22px;font-weight:700;line-height:1.45;letter-spacing:-.01em}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12px;color:var(--ink2)}
+  .meta b{font-weight:500;color:var(--ink)}
+
+  .sec{margin-top:22px}
+  .sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+  .sec-h h3{margin:0;font-size:14.5px;font-weight:700}
+  .sec-h .hint{font-size:11.5px;color:var(--ink3)}
+
+  /* summary strip — 静かな数値行 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .stat{padding:12px 16px;border-right:1px solid var(--line);background:#fff}
+  .stat:last-child{border-right:0}
+  .stat .k{font-size:11.5px;color:var(--ink2)}
+  .stat .v{font-size:27px;font-weight:700;margin-top:2px;letter-spacing:-.015em;line-height:1.3}
+  .stat .s{font-size:11.5px;color:var(--ink3)}
+  .stat .v .unit{font-size:12px;font-weight:500;color:var(--ink2);margin-left:2px}
+
+  /* pipeline — 罫線の表、進捗はニュートラル */
+  .steps{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .step{display:grid;grid-template-columns:26px 1fr 120px 92px;gap:14px;align-items:center;padding:11px 16px;border-top:1px solid var(--line);background:#fff}
+  .step:first-child{border-top:0}
+  .step .no{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--mut-bg);color:var(--mut-tx)}
+  .step.ok .no{background:var(--ok-bg);color:var(--ok-tx)}
+  .step.run .no{background:var(--run-bg);color:var(--run-tx)}
+  .step .nm{font-size:12.5px;font-weight:500}
+  .step .nm .d{font-size:11.5px;color:var(--ink3);font-weight:400;margin-left:8px}
+  .step .bar{height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
+  .step .bar>span{display:block;height:100%;border-radius:3px;background:var(--line2)}
+  .step.ok .bar>span{background:#B9CDBF}
+  .step.run .bar>span{background:#A8C2DE}
+  .step .val{font-size:12px;text-align:right;color:var(--ink2)}
+  .step .val b{font-weight:700;color:var(--ink)}
+  .step.todo .nm,.step.todo .val{color:var(--ink3)}
+
+  /* table */
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:600px;background:#fff}
+  th{text-align:left;font-size:11.5px;font-weight:500;color:var(--ink2);padding:9px 14px;border-bottom:1px solid var(--line);background:#FBFAF8;white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--line);color:var(--ink2);line-height:1.6}
+  tr:last-child td{border-bottom:0}
+  td.nm{font-weight:500;color:var(--ink)}
+  td.tel{font-family:var(--mono);font-size:12px;color:var(--ink)}
+
+  .note{margin-top:12px;font-size:12.5px;color:var(--ink2);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 14px;line-height:1.7}
+  .note b{color:var(--ink);font-weight:700}
+  .note.flag{background:var(--flag-bg);border-color:#EBD9A8;color:var(--flag-tx)}
+  .note.ok{background:var(--ok-bg);border-color:#C8E0CF;color:var(--ok-tx)}
+
+  .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .linkrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .filelink{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);border:1px solid var(--line2);border-radius:8px;padding:9px 13px;background:#fff}
+  .filelink:hover{background:var(--bg)}
+  .filelink .t{font-size:12.5px;font-weight:500}
+  .filelink .u{font-size:11px;color:var(--ink3)}
+
+  /* hypotheses */
+  .hyp{display:grid;grid-template-columns:26px 1fr;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+  .hyp:last-child{border-bottom:0}
+  .hyp .no{width:22px;height:22px;border-radius:50%;background:var(--mut-bg);color:var(--mut-tx);display:grid;place-items:center;font-size:11px;font-weight:700}
+  .hyp h4{margin:0 0 3px;font-size:13px;font-weight:700}
+  .hyp p{margin:0;font-size:12.5px;color:var(--ink2);max-width:64ch}
+  .hyp .m{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;font-size:11.5px;color:var(--ink3)}
+  .hyp .m b{color:var(--ink2);font-weight:500}
+
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(30,31,33,.4);display:none;place-items:center;z-index:40;padding:24px}
+  .overlay.open{display:grid}
+  .modal{background:#fff;border-radius:12px;width:100%;max-width:640px;max-height:88vh;overflow:auto;box-shadow:0 16px 48px rgba(30,31,33,.18)}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .modal-head h3{margin:0;font-size:15px;font-weight:700}
+  .x{background:none;border:0;font-size:18px;color:var(--ink3);cursor:pointer;line-height:1;padding:4px}
+  .x:hover{color:var(--ink)}
+  .modal-body{padding:20px}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .field{display:grid;gap:5px}
+  .field.full{grid-column:1/-1}
+  .field label{font-size:12px;font-weight:500;color:var(--ink2)}
+  .field input,.field select,.field textarea{font-family:var(--sans);font-size:13px;color:var(--ink);border:1px solid var(--line2);border-radius:8px;padding:9px 12px;background:#fff;width:100%}
+  .field textarea{resize:vertical;min-height:60px;line-height:1.7}
+  .field :is(input,select,textarea):focus{outline:none;border-color:var(--run-tx);box-shadow:0 0 0 3px rgba(42,94,150,.12)}
+  .proposal{grid-column:1/-1;border-top:1px solid var(--line);padding-top:14px}
+  .proposal .t{font-size:12px;font-weight:700;margin-bottom:8px}
+  .cols{display:flex;flex-wrap:wrap;gap:6px}
+  .ct{font-size:11.5px;border:1px solid var(--line2);border-radius:6px;padding:3px 9px;color:var(--ink2);background:#fff}
+  .ct.req{background:var(--mut-bg);color:var(--ink);font-weight:500;border-color:transparent}
+  .modal-foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+
+  .footnote{padding:16px 28px 28px;font-size:11px;color:var(--ink3);line-height:1.7;border-top:1px solid var(--line);margin-top:auto}
+
+  @media (max-width:960px){
+    .app{grid-template-columns:1fr}
+    .side{flex-direction:row;align-items:center;overflow-x:auto;padding:8px 12px;gap:4px}
+    .brand{padding:0 8px;white-space:nowrap}
+    .navsec{padding:0;display:flex;align-items:center}
+    .navlbl,.side-foot{display:none}
+    .nav{flex-direction:row}
+    .nav a{white-space:nowrap}
+    .topbar{flex-wrap:wrap;gap:8px 14px}
+    .topbar h1{white-space:nowrap}
+    .body2{grid-template-columns:1fr}
+    .queue{border-right:0;border-bottom:1px solid var(--line);max-height:280px}
+    .stats{grid-template-columns:1fr 1fr}
+    .step{grid-template-columns:26px 1fr 72px}
+    .step .bar{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><img class="mark" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAARGVYSWZNTQAqAAAACAABh2kABAAAAAEAAAAaAAAAAAADoAEAAwAAAAEAAQAAoAIABAAAAAEAAABgoAMABAAAAAEAAABgAAAAAKkzX04AAAHLaVRYdFhNTDpjb20uYWRvYmUueG1wAAAAAAA8eDp4bXBtZXRhIHhtbG5zOng9ImFkb2JlOm5zOm1ldGEvIiB4OnhtcHRrPSJYTVAgQ29yZSA2LjAuMCI+CiAgIDxyZGY6UkRGIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+CiAgICAgIDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiCiAgICAgICAgICAgIHhtbG5zOmV4aWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vZXhpZi8xLjAvIj4KICAgICAgICAgPGV4aWY6Q29sb3JTcGFjZT4xPC9leGlmOkNvbG9yU3BhY2U+CiAgICAgICAgIDxleGlmOlBpeGVsWERpbWVuc2lvbj45NDA8L2V4aWY6UGl4ZWxYRGltZW5zaW9uPgogICAgICAgICA8ZXhpZjpQaXhlbFlEaW1lbnNpb24+OTQwPC9leGlmOlBpeGVsWURpbWVuc2lvbj4KICAgICAgPC9yZGY6RGVzY3JpcHRpb24+CiAgIDwvcmRmOlJERj4KPC94OnhtcG1ldGE+CvtHBHMAACQLSURBVHgBjV0JmB1Vle56ay/pTqezL2QlJCSGfRUkIIiyCqiAjo6AgMrnfC6IIqDOJzqioqgM883ogIoODuOu4yCOCqLoJKwSSCCQPWQha3d6ef3W+f9zzr11q97rQNFdde9Z/rPcpW7dqg5RvV5va7RFmWhk/eo1t1xZHT7Q1pZpi9pA5FkOd/W1RsA0GVDaQFbRRiQIqEaxLkoUckdEcX+YHutU9vgNAARyXkwKEIOw89OhwWZDVcBTosDFmKIBXbHuPVSf67lxPYtu/U7n3MUEaTQyxM9Eg2uefOHW6yqDA6ggNiBDT5yws2DpibjetKdTBRUwxa5UvW2RYiwmwrokU0mkyiEFZic+Gk4tJnmXJDugM5CYjcAMUIhkMcmsqJRyEZ/8iKIyIRNFlf79L976wcHnn2bjarKHnn967eevK+/fE+XzEPfuxjZfQ4ngJkYzXiP0SctgxWwv5woig1MsoiUh6UniiPlh2NKlAhZRHaJCChMnoeqF/pqiGGirV8uF3kkLb/6XcYuPioY3rFl763UjO7dm8oW4Zzt3X8PV7Au0WrdcqZ/mSBJIWUma1kLX6bRPtUQgMg1GgxJFhS+mLVaWvY5CaueJqbEJ5ePMTidacJ1ASFil3D5t1mG3/Gv0xLtOqgzsi3I57aahRa9vhRbITkRxWROhwEXjqC7Ovm+ojHgUUyltB4oibm0tZaEJonFDQwKlKokuHJsg0wScFXe1HoQqkbU1atX8+ImZ6mB/lLXsUJrmxziMRYNa9KZplr7SOvLvBQRICUnXzE2BsbIDdcY9GQQi8hCaMUCzUmjOBFUckLGLrOivY4axuhlXeATBbzZXObAPU3LoiXDSOB7Q7OEmgVkPFWrSBQGUC0vJVLBGQGH4EymqJ6SUC17MMwUjJsPneIJ1ZAfiraVsUk54kiinlbw6lqlGUSbDMQVoGVq4arP4xkmqqxSFXcAA0lypoOh5pk+Lc90JJVHFaQeYZLma+mtee6LUcYrhtbHlTCbDbT5AtPhUkXU2lkiTpFok4JDbvNgQPRoTbZHXfDabMYoOJeg5D9U/55LakVqiAzt+cHUAnkRdEC1Uc8ZLqX3eeoKDNmSupV5AD4oxmaEHiZCkCDcBSVUmSA8LAhcfDlSgEIZtjouG+afSYDRhK673xOy09N6bVGRvUzAVOJkPcS3OkA+dgasnKXfiqJwfJqCMoNs7PvMcRblEVZxHavWeR1bsAyqAjIG0GUl06zLlU0t5TA3dpRrdkOFMNg7NfazhKcq2s8UgTJqhN9DUJvNJSaiIPSTTDKR4YZUdTucEiEuJngaHtFqQIMcSuqskrsJxXTPgGG6jUW+rVhu1WpTNZgrtmfaOqFDENNeGx5nyaGNkuDY6Ai0sR6NMNuELMUlgzGHcjEEoEi8zxAYxEUXw4lo1AMKpLAh6eL2AgCLlqKpnB2I5QBUJcpreuJPynIQF9ShoIYpXK8hCrqe3Y97hXYuP6ph7WGHKzOy48ZlisQ0JQvuMlqr9e0ovb8SqfejZx0a3bSJmDgt3aWtxkRQFR0F9sIwIVbqNknEGSWW1TF13WGoILP1f+wU1VdvJuatDIB7TxP7keKCseOtS7bEBLQnlpcUja1In3ahUEH/n/MP7Tj+/57jTClNnRfkCktXgM3BdZgSKcojhjpnJolwd2D/4zIo9D95/YNVjHMxYo8rBbOgYCh30voCYdLQ5QTJQpNcJFlDpexJNbbkzMATWY4swahQgCBO0JJ5xPDkFms6RIDTaMHA65y2eevGV4084I9PV3ahWML58RM6JpitGXb6Atfy+Pz+4/Yd3lXdsiYpF8VT9CuSVKgTvgmdLEFZTrqQXxZDD7guhACkAUKokAlRqUlYVrDWilW9dwmYEUShKFjEPJAVqEYksYFQrCHLKhe+ZctGV2e5eZAr9RTh6smYMKM3FKFPsKL+y9eV/+6f9Kx/ibJWIKy2vdkFtKWUOw0GJjsot4dxkJ2wuCihpkeGK/xReOSxnr148RaJ2aaRGfIguIQxEASvl4qRpcz/yxYnnXI6B06iWxUisxZIaCmmKZYhkI8vZcT3jT35TrX/f8Npn2rLZZF8OlRPlZmxQECzpjFn4yQTBLGOQX0rxP9factf2s4FwcRKqTNIKSlLzIaYMVZNbr5Q7Zs6b9/Hb2+cvro+W2B8hZGE3AwQUxdKzktFxq1UMuFnvvxlz1p7//VFUaNfovBqDShxiCRMccgl1MR9CUlb9SWgpqu9dCF7a3GTTAGYUOcOzRprpsuE9kwLvCLCIeNqnzpr3yTva5y2ql3DPtunMoqKoNougKkQSyODdhZh1TFtts67+ZPcRJ9crGKogsTk1GrEKvj8i3DExqHPFdjgjMt6Alxmjya2PQcz3HRY1A+y87HT6IzI4NXR3NUAWCTLEy9hTetGoZzu7Zv/Dre1zFrLvKHBCVyBJD5z2Yr6Q5MMichQV22e9/6Z87ySUoQzZGEYUSUGXqVTGH7d80Vfvn/+P385Nn4Mc4daI+Z6TII/ArtRTJ5cNTjGCqs1gWkpJJC981LA+p5DOJ9QESuqV6vRLP9C97MQ61nsK1mQ/QaCMynlpbaUwetPgBtWchVMuvpKDTt2Hp+KsV8YwzPX2zbjqhvzEKR2HLZv3kS8UusdjyHcf84aJp19Qr1a1XVunyaOYQdSN5JPKAskueyISPosB3wuzt1He+1otdy09duJbLquVS8KRkxePSWEJGJDQs9JRDXW0LGf0jtHSxLMuwSKzXquqtPqAstx929oq5d5jTi1On4P+gi7ctfjontPOb0SZWVd9YvbHb5989tuRZVH0egxAoTQ2WEJEDIqgZKKEqvrBsko7FghxglRFBexs4qxlsrmpb7s6U2xP3M4DgYQiKrRJf5IZSUuFXDypYHJBjrCYUo8h7T1Wza6lx/uY0Xf6lp9X7O1rYLFeq0699AP5ydP5uBMe8bzs9UI2DNDC2F7KdofTMGfSVUBUK11Lj+s+4kQ31J3IQa4psIRkMw8JkYxWyuNPPAMzEdbi0PBpEu0Gmqc4c24b16LgNRq1auecQzM9E0c2vohqftJUrFe5sg+OJEJzIhKepIRRBTvRgzhlMeUy1Khr+nCmb/n5WMulffauKHbKArktSKIUTIUeBNL1WmHKDLxLwBIJZO8+UXDDzBeynd3WR8hrtDFlc0Y3rOZyDE88i4/mo587xrJtdEFHWX+g5M05ALASPUhEKCVD00vB6QmTxy07wY1wYaSMK7bqmqKQUmJgeQr4vuxtgZTJ0pYODZ0sxC/KospH31gay5TOGXOHN65lj4Ofk6ZhfU8jbjZVI6YhF1DEM8LZr8MDXyX1TDZmOOOaEi5WUjp1qlU8i+YnTuXzpz+c654gitCFhiKolYCvRYpoP21iCQEDp2P+4Vn2VjlgSG1hKsXCh8uLoPc1GrnJ03NdPVxMNRrZYjvWdbJ8pavqB85aMEB/0TZA1afTSXp5mHIJ8nhe3xXq9RoWzfLMHcYcliUtSI2Z1ByJFW9K0VQJRKWnuCpTrxcmT8dWiewHqAIBIduojFb793KDyR2YE3tPefOsa29GWpGj/LRZcz9156Tz3pUf39fGx0NVd9LJq4f25JbuyFsN5Tg0XP2PKEe4sx7cmNmILSiA1B0sZWIBzanohQIg4F7W1Z3tnmAdlkHq3bgNWShtXhvOMpDm7gpf6qHYyOSL4448+ZD337Lwtu9PvvDvcY9m4sQIgV1Br/DFU5D+0LVQUFqD6AHRPT+QBP9wh0eDpG6fgTiLbODUETqQYkmVGsmFoJBhMMrlM51dsKh+qWsgI2XDG17gdJOwJlJGaeDJGUMs3zdl5tU3zr3h9lxPHwdmMj7vjSm1cN6J8FFD7TsKrpCnl3yg44EunSkU2ZAtDiyystwGS3hMjFg2KMZElNTrVlyx2M78qFGZsdEXcpOmT73ovZxuXu3ASgrL/fEnnonHxnzPBO5StfbfgNRCC1TOQbaMjLlMCv0mQxadDa7ik5FE2Tx2c9CY2Egt79mJuRPdGy0vKCIaZrSlc5BqMu2dYBbcApdEuFSvz3jXh9rnL0GP8GIHL9RHh7H6xwyFm13Yh7w7WtDIxF8QPNNaUEZvYMfzWWCeGliYVQf2woZjRehQpU0v7n3oF0PPPV7a/Qrmhnx3T8eC1016y2XYkJbFZDhKgSN2/Tkw17LIlbQ90MCm+I+V6qKjJpx27tgPyYaE1+j4wYpElksRthwwi098ZsXuB37Ix4Cmw5ziRW+OCc8xhmQ/WHygrnC1/6Am5Ajby6Nb1kuyQMKrm8yun39nx4+/ja1l7LrjBQbERg7sH968rn/F72a856OTznkndy1Sh5rwhlLcsIr7dKlUPdCPgeanTkTbd8aF6LPcYxkbBP16dMtLpa0bxi09Fk8tcu9H81WmXHRF///9rjq4379NYX/xu/oSt3YGmVpwYo12pO9J80LB9xApqhvEyeaG1jzZKJeplsnuuO+bW+/5Sm1kOCp2ZHI50JBQyND7SgWsgSf+FOXdKiaMvLnsLApHDRKrOrCvNrA/yvJTLoqgGXv6upYdz5WqSjVDwc9cfvjFVev+8dqNX/7o5q/fJH1NEKrV4ozZE047r44QNGy5aPaBJz9ih9YYjTeCerymkLRQTtQtXRBFFkY2rCltWZdt7xr46293/vQevPOS5pWFDzFdAW+7apWdP7u7jQ9E3opCypnC8qO0hIiabmDjdXT7pnpp0D9IY3ouzpxfmDQ9sVINUA0smxt+/uny7h1Re+fAmidZcCsmTFt9Z12cY5/inRFmE5apTwJTEyeHnoLKBIlr6l+sGJfaourw4N7f/6w2Wtrx03sIEaAE4TJNUa4wsh7ZfAlDz3JM8+4AqP6oNUcOruikmaG1q/xMDHFMSV0Ll8kMMqYabEGl83XH56fOwiTYc9QpeKbjzUsONFvHnIXSiUpBXIHZsEgJxqiSnINY4p5qwjy6hctDhAecvY/8Ggvc0e2b5W1fQjIAB1IDo6+0bVPHgiVo+YAVFKGtxgOaFEnF0Bh8ZiUWX8QSaiaf7z7yRJ1QEopJHGShc96ihbfeXX5lG6zzlqorJrGFp99pl147tPoJNl58t20VCGnIN23j5IaY3NPFn/gUa0eZ2sjQtvvurOPNl/M7lnMlJpRrKORosEUOPJx47JTCKzpgfmTD88MbVuPJRsURWOfcRV2HH80+FSoa26lrFvBN2JSZ4444CRNiajyiN+UnTMZ+cb53smN5hxxI0xWoLkEp4+w/XhxAnLqIy6KnWxIgqD9gSNfEOqDDmiCQfS1FDMw9v/95fWRY5gNqwO6US96X6eDCOo0QexhwsETAaygMdioH3uLmWBntPHRpftZ837W924F+usgEJQxxxlVovhqxQ2lwVuYfkw/NO0FcMSKwd8XunToSZhzPm4BNzF/r1uz/82+wziIb82l5dOrFV+HFGe9fgaRTfg3XwChutaM7toxuXouCagLyVVGRoDgPULOewx4TZ+41dwesV2rYD2zH+wY/AUlbtghFXbMAJPGN+vb/vKs6NIB+hJGFR43pl1837Z0fIlSiRwuYKgbxmwlP9yzLAT4CyO/61fer+NrZ3d2cV2NmCVlALhNsWd97I4qQENDeRUaKDAISiVvJwmW5vknB1qfI4eQ9VtRkNVvs2PGTuwceexj9qFYa6Zp72PR3f6Tn+OX4ZDnOTjMIoQDU5IqaMEO8M2JpsufB/9rz2x9b9wwF0p4BUjDZL3QlfVBpu5tpL0JLN3mTcnv8iW+ERypOYPU/mY6EQYzKYsf+Rx/c9sO76rV6oaPQd8G7p150Ra53Yh0PHB49LCisoTRlB+2eyXH2ggA6SyZTG9j3yo+/jQYQDIwYqhzUI+d+g98HjXWYRxqgxcmuTuSQaJZAr1Xbp8/uPhIvSPX1izQt6IlBnDaXKXb2r/j9hm98OioNdR9+zMwrru9acmwDL3b0cczQg4A8JYWk0ecK9ZHB0R0v1UrD6M54ihxetwaLeyx0eXePnyh9DCmUZDVCglzMSQ5qDMsSoTx2H/POmoAXdyDplUrvKW/JTZhkT0zUTwA40fjKvvOXB7d885Z6aWjaJe+bdtkHo/ZXeeCKlVMlbE3kCgeeenTbvV8r79yKl2vcMKnji7d6G75pk71qazF4Bd8QeMuDXMdiD2IMrQ5JHCUlK6ohNSfsQLSO+RmDYsLpF/CFRJyXpJBT1YGjI2v9127M5gvzP/alXjwuVcvy0Ac59WoMdfATrhAXz4nlXds33vXZ6t5XkA56nUEbZ7E8wWureqOCHsRHaxthamIsfNcT7Gme+DhCm5JDyZF6yrOmFqVWsFjgTzzz4vZZ82xHopWMWJFT1IZZef+KP2y841OFcT1zPnZb95Gv5xttQKu9ljZifZfAgIL4h174W2XPTkzD2qZRrVKYNqf3pDOKk2cgd/seeaC8Z4c8CYj6WB5K1AYcf+XK5JhrFgEutEOGu8gEJKkLHGMRq+dc57iJZ10sG11BBkU7JYwqdteG1j6z8es34cFy/qe+0bnoqHoJi8Ok4Bi6SaGgFkW1wX64Qhh0m3J5whvOmX3NTRnuF2PrNDPx7Es3fuX64fWrsVIDtjRGMJo8knMDV4j5lbSoOCH6Zr1Mxa3mJncn56/VSs9Rr+9YsJQPBHpAT39YVRDHyeQq/Xs23fmZTL06/4avMDv+awgY1h+vlPDLENIXyuDOlc129eCGjgpnw+OWz/nYl5EdgKNTowEK0w6ZedUn0DZsYra18wqRumgF2ejcWeWetB5O2KpACD1DhT/ifZMkVTLZvjMvEpOilpbxWGBgwye74z/uHHnpuRnvu9GNLGdW+Il8pqGcZHhFePVaacOa8r5XuBvJj4zqjdLQtu99rX/FHzLZPG/2/KKy1HHokuKMuWhFoFpj+zT5jFmwFoi/zZsjUGNCYV56X6wuDpHug1VKFGGfDF+u4OU9HmWF1uqkWhHfzAw8+eddD9w/+ZzL+s68OO47sZIzgKs5hYsjxmLJUpQZ3vB8aev6yef/XXH67OLUmQhkZPvWff/9gwMrH5p+9Y1oFY6+fLHvtHO3/eBFa36HT1MgWdWQETunjqQdyPDujgOXVHZSkloFBB4FsDjEyyyZZVtKxaFiLt/5o2/hE8epl18nz5+vFjnwmlxvssHYet9w3oTl58vQwQzE1xjjc7n6ue9cf9uH+x/5n76z386FVa3W+8a37vz1fdV9uzRlkhSmQu2EyJpEN8RcG5kgLppOS3WomCo3su2d4489LX74SvGDKhrwwN/+emDVyqnvuEY2tNyEBXM0nDzogHou9GaBpDjfiOF7/jKmmxFu2qOKfeFCcfJZlwzgg2w1AEx5Bxs0PrsB0urhfUHhtQeB6LpLzCfRk5POxDWM+Y65C4qHxHsIMa+51Kjv/u1POmYvQFMjGOOLHZZ9gRWZOeXDczBkB0c2W7TZKDDGkQDhS8/y3leynZ3y9CP71uvW1PD+GiNOD3ZPAXXdKGXBvzjkWAG4HZRKSMYsJ6JXdJyOhcuyneM4EJIqSUFM5DlsSA6tWtF35iV45WD7O6FSbBCTbr22f8/wumdHXnhqdPO6+sgQep88ZwZ9Cga8W1rwZ8Jmsh1dQ+tX7/vDzyeceg4n5kwWo2zXr+5FukVQ7bHvmGVeYifUfz8HSU+jHn9TUgKn8s3nCH+f4agiiFNKX9jY/D+wagX+OmH8SWfGz/qtJCGOGBBMozSCeXdw9VOj2zcWp8zsXX5B9zGnRAV+pW8WVV39C7zEorE+PLjjl/ceeOKRvvPezcfDerWtUt32ndsxwPUTmcBnouDXA4QR4FFDuRDBbT8xpnzvU6xQLabkC8UZ2P159dfBsD+0amX3oiNxl5EtntZ5JDJuN7kc/uyjMH1O1xEn9b350tKW9XseuG/zHZ/omL9kxhXXdy46mjOujygMDqj5AlaMm+/45P7HHznkvdePP/qU0Z1bRres2/XL7/c//RfJDsKUCDQlGDo2vixPiqci0cqLlmq0NkaUTCcp7WomkroAGX/zdNhtPyhOm4330zG3OZdIf6364vWX973xwinvuLb1/a6FlkFiD5BPEs89seWfPzO6e9sh19w8AZ8ysh9piN4y/ryhvbx906ZvfvrAs4/jb40wIHOd3fjaoT7YX8ffadk/DCCBUdWpa0pA0PnIJhuKyV0MYiYpE5GUIUktE/UexAVKNerYiMJQtwklZjaVMplq/77aUH/nYUeM2d3onGsR88ccwwyCe1PXkmPmf+7ujjmLN915894H70++SsarlyKeIfofffClz/LtBT6mkqgjbFGiQ+FDT82OeIZ7Ggx4GyiqaeRTiAxePMHTPChKdq4xbu9ovB5vCpla0OUjsp/InFCApSTs6VX378aKFn9HhlWv+ZYWCzz2LC3IGcOqMHHK3I9/ed1nr95295dyE6f1nnw23vbA4drQIP51jd2/ub9/5cPs13iegA2EyVDwutwcCww4V8fiaKb0bzU0H3qmvMdLgaSr7GOvWTbCC2Xc7PDXK9YrndMJ1NiJBNlXsDjAI9WMK29Y/8UPv/zvt1V2vlwtDVV2bB166TlM59hpwRQjaWmdCrVJnru5e2QrmESsnot1XM+RPkV5kdLt+xAHZFHiKcKXMfGQcZxQ2pX5oUVU6ODGlTfgePFVvYnrTSUsAEZLPcctx7PowGMPbf7WF6CBYPmVAPZ69HUI/RYy7zm2QgyBxPGAILKo033q8tcffL2v3YBXFaIEggB8QtTpQMoODBw8GcpOhVuRt9QwcX7ozOdGwB5MzKH7qwl7dxrIRd+b3lbP5PjVZrE9i8mYCz9xjMLImDPgdT1ac4ET0JiHffWjIkCTAk/4laq6haKZCpA4wHA/quzfI2ELR4ECIVdkdsjk2IaiI7+WqwlzTtEDj8eY7PHRL5+5Ys+Qd/ETYibrfbaCryfNGtnBJ5jy51AUsJxb8v3UYkq4xOpkuhomhdGXN2KRmkBtruAbXfxhIv6S57WsmJrVQQmDw/Zuz4R2viNlgpwvTi2UdDS9piWT3ESNQ4gEedSQgF2zuobCDUzT1ApVhC2vIy+uMvdbSapVrIyxmQ8xLvDCBCecalXRaMOzSGFMYSXJbXkeEoCU/EkZvpouBOygKFKoK0nC0blDO6cDSWtozw0nDlGVoQtHB59/qqb/dJUDaHGt1/HtQK6jkw+KyS8GWwiHJJjy/mjZvI8yXXgA1Bfc2qjiFdIvVz2HSImyygqJRW+Cg1TqTl8maeukTkqmHVRcXZs8gGT3Ez7OeOG9fRP+4jRj35QIfqsTdkUK02ZjPOITqRi6lWSaFlgOWTK+HE995awIEZ4s0lChVdnHKC5pomMaNGSIkQJM4hIfVZHUW2RsiTwewteiVKvVvQ//ymvHDF8iPlY/Dfy9UGnjC02vxr1cUFAbVJRDTUvVONgCwXeMziUKscyZVH9ELXHSNg1JoGiMiR4CnABX7mIkUdFB8wplLiNwElaMGydMaKhigf/4H0fW4aMe+QwY2qkDCEDDl6qvOwH/npN+3ZISSVfVaGjaleEP/6tW8KEU9nucNe3UCuNoUpNgGJD8hmJgh5LIFmzoj3MHm/YkUteR5EopeoFDTiGThIQ05hR8MYVvF0WqSd7r8t+umNA+d1Fp84v2dNJk18uy0IwEihIzGawt8DWrfojmqNCRtVvCuwSkSKRw3SqIiUge0klkkjbDFLVis3SsmwCiM0hzvojvbPlpT/gtsjNNVcFFJ+o59tTyjq1jgCUTHwulS5jvhtY8Vd67M4MvYWnfpUT6R8I/VbUdeeFwaECHv6Kr5bQJYdFpvYsJO0yK02+hR9XYB7MpRvFSHLt/2NASD8REUp+vp8dPbD9kQXXfbpqGsgtNBW0xltRizcJxUvXavj/+Wiq0r1oo6Y8K+bMQcfIQNu2AEMsn3fC6KGiCHD/OEXRTzgdaZCYOTlV4Nb57x8Y7b67u38uNhdh4QhK7QoUZcyigLRlAsVHGOgIxPM0dePqv/Y8/jHcXWMfz62eBojb8lxACcY8oND05tjPo6l5WCqACLHvN4imS+iammjIyoFqjKF/ZmFnKu7bho2p8hWt/5JZEtRpWKuhl2oJe3xsYyw7oNBPhvcWuX9zbjm/DTzi9c8ES/JEm+iM+UZbHMfPSRe7Ms64+AkAfnsyMzviUkzkX1Ni+lIIdRUVT7FhKkQ1dRVqdoSCafDordR22bPaHPtc+d3G9PMJPDUO0lLIHbrabknRV7mfX8ffRPRZLrYa9jh3fu/3A6ie5VdDy4HRrh0YtFbEd+MbU0Vk3BsWA9CBKijT0oBDoEAhVmWKMLH1YDNjJ21ZZLB3xKQW+icKrRPzjORxN+nlsCla1PVHatQk7tGNlbr/mcxiq2GbkuV4vTp3RffSpg0/8qaLLdGJ6XG04reIMC1LmyYqubyWUnOFIh5goxoKOG18Vz9WTcdCs4ygGPiPAHkj/Yw8Nr11V6JuChyb7MlAmC8rGCl4zMaRj6kFKDgTP9FhA4M8B8FKbC3pHN1VUHUWukhfXHyjjuC1NyW4pJcJO0kLSnnDIYY/xvQaqsS1HJYXP99mBpx4dfO4xfFI34dRzxy09rjBpqvv3XcRcyo53FHdJX07JJKpqj6LYMcti81c/QfXkVCGhq6PpVbJD5JUXLcHFxqhPA/qIH7YMtwmbJF16JtgOR9mihXt7tQJp3aDAZw7FabPwdyW6VgQTD5wYJhiGPLOLgYZyTQYmiUKHAFhSBkW08KJdCnAAmwSjA489giGGVDln1TFxEkWLxzHlypNMT2wQx/GhwhfQ3CTNyEyIqxzhxf0ESk36alPaTNlEsARpr0qpIDCEJFtcqeFEQdOkbQmHpFBMGOTI4VsyJmBw8dWFF6E+D4JbcycAjSXGcIoRE574f0fRTSsiT1BBdxvSUqE1OwiIoiipcaEgwyQzMtUnDu1J6uECR4H+2aYBqbTyPYnW+KtGeNEOTWygiQk5qYSKigq5xhGrELBDXTVlo4lnEJd1r6nGYKTiJ1hJixqpOj/gdaP6AjqoiSNZj2s2sxDEKSM4lum5I4kJRaVqTE7YYMXc5bgTXjLAlDhxrGHAiZ3yMD55xpSkiagJ04iZ9Or+L1EDRGZIxpmXSrmSrkqI7NwHiZU6isdzINjaSCzqjZnrvi6FICbPsGxaPayxAQMNj6hUlx3vEQv22seDa4G5xfACgBf2Et6gawCX9FbCXkuaFmDNeF7EF1TGe59SSVWbfEwQbIWog4jxwAM5y0kyQjz8GoESWrQ2jHtQLKGjjxNuTKMiD09J+ZmqBoKq1zI14ahzYv4ajEjS4C9sJMzAF/5IEnyzabD0XX4Mjmzqyhj13ZcFBaUnPBRSinbyN8WQqGUoJfwRqoJ7E06LZgJhc8dxm6/mDoNIMwkV01A0CRIDhog4dcZPOePrxRTgK3+E5nzkLiDLKqi6IQAYjpWepOMkNnkuLuHkVBU3dsv4bFDtxk6hxTUED/BEcow6VUI1ylrwjN+FZNrwwAmjCKKriQk7gaw/EpOMwyA81cCedEpVcxsIGpr0WJU1J1QmpU6nCRmQvXhAC/1EWfw0Z8miE17NZJPaNrsYjxfPF0WeFMLTvSwonugWcp4pxikABBjB1x3IHP979YMyAE6KNsUhwCKlTrg7b5OmM0gxFY0p0v5qSFioOx9TDaqaIhoUgYTIfWgengUCiLz0c4WTs+bEwjPjeL/NvyYPvn0yBPPVpFlDUX+MZVZ8zRdgR7OWFA+gvGhQgApyAN/jYHyJYlBHFBaICZk01VD0TUUhExU1tRJ3OfNEsAyJcviVUeYcxVZBvrs3s/hz9/Bv9vUb8NgiSjx4kaLTUiJHADG9TyS7IxA1FMd5tas0oVcX2zgxLzxr/oBhhuEB2wJMEtRPSbEzY0h2EWcpqXOSE4K6ZsoIKo1/7aqCP4FZ/PnvZjrnLz70hq/m8e/sxP9+HPwJwKVIb+UQnriMagLaBIwsIoYSc8YqITC1YP4RRJNCMlPDBpGeCQm2i7QQro4v6gSRApRMTiyGZVUXtuPRhJStgG+skZAFN3y1Y+4i/uNx4w4/5tCb7ixMlo8liCU/cvJ6RvIXQgVMhQfB2kNHvzN6kCtsiZKKuACJLBy0tlrh96UtDhKVgbPzh7lDVektlEgam4+RVZw0feHNd41bfDR2C6IaPm2UY+ilZ1/49JX4dxMEvQWuuEDLzulYhkS6536VY1MR8NhBLFAUuQkLDTuMjpp0I2GoEePQnBCkE0EOBBb18HaN4IyKnMmMeYEFIjsX6Fst1zFu8Re+27lgKf/HYlHb/wMGQrrZCsYXqwAAAABJRU5ErkJggg==" alt="ラクリス">ラクリス</div>
+    <div class="navsec">
+      <div class="navlbl">ワークスペース</div>
+      <nav class="nav">
+        <a href="#" onclick="return false" class="on"><span class="ico">▤</span>ジョブ<span class="badge">5</span></a>
+        <a href="#" onclick="return false"><span class="ico">◷</span>実行ログ</a>
+        <a href="#" onclick="return false"><span class="ico">▦</span>納品シート</a>
+        <a href="#" onclick="return false"><span class="ico">☰</span>レシピ</a>
+      </nav>
+    </div>
+    <div class="side-foot">env <b>alphadrive</b><br>brave / sheets 接続中</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h1>ジョブ</h1>
+      <span class="sub num">本日 946 社納品 · 実行中 1</span>
+      <span class="spacer"></span>
+      <button class="btn btn-primary" id="newJobBtn">＋ 新規ジョブ</button>
+    </div>
+    <div class="body2">
+      <aside class="queue">
+        <div class="qhead"><span class="t">キュー</span><span class="n num">5 件</span></div>
+        <div id="queue"></div>
+      </aside>
+      <section class="detail" id="detail"></section>
+    </div>
+    <div class="footnote">実装前のデザインモック（見た目のみ・ボタンは仮動作）。数値・社名はサンプル。／ ラクリス（lead-harvest console）／ quiet-product パターン: 白い主役面・色はデータにだけ・CTA 1 点</div>
+  </main>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="新規ジョブ">
+    <div class="modal-head"><h3>新規ジョブ</h3><button class="x" id="closeModal" aria-label="閉じる">×</button></div>
+    <div class="modal-body">
+      <div class="fgrid">
+        <div class="field full"><label>ターゲット / 与件</label><textarea placeholder="業種・条件、または「誰に売るか未定」">院内売店を運営している会社（病院・福祉施設内の売店）</textarea></div>
+        <div class="field"><label>用途</label><select><option>架電営業</option><option>DM・郵送</option><option>フォーム営業</option><option>メール営業</option><option>提携先発掘</option></select></div>
+        <div class="field"><label>目標件数（納品）</label><input value="80" inputmode="numeric"></div>
+        <div class="field"><label>期限</label><input value="2026-08-04" type="date"></div>
+        <div class="field"><label>コンプラ制約</label><select><option>制約なしで進める</option><option>競合除外あり</option><option>個人情報を扱わない</option></select></div>
+        <div class="proposal">
+          <div class="t">自動提案 — 用途「架電営業」より</div>
+          <div class="cols"><span class="ct req">会社名（必須）</span><span class="ct req">本社代表電話（必須）</span><span class="ct">Tier</span><span class="ct">都道府県</span><span class="ct">業種</span><span class="ct">電話判定</span></div>
+          <p style="margin:10px 0 0;font-size:12px;color:var(--ink2)">品質バー: 本社代表電話 <b>85%</b> を仮の合格ラインに設定 → 試走で最終確定します。</p>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="cancelModal">キャンセル</button><button class="btn btn-primary" id="createJob">パターン判定へ</button></div>
+  </div>
+</div>
+
+<script>
+const jobs=[
+  {id:"LH-A07",title:"食品製造業 × 営業求人シグナル",use:"架電営業",ptn:"C",target:300,stat:"done",statLabel:"完了",kpi:"電話 86%",state:"done"},
+  {id:"LH-A08",title:"院内売店 運営会社",use:"架電営業",ptn:"C",target:80,stat:"run",statLabel:"実行中",kpi:"Stage 2 · 62%",state:"running"},
+  {id:"LH-A09",title:"ブライダルエステ（都市部）",use:"架電営業",ptn:"A",target:2000,stat:"wait",statLabel:"GO 待ち",kpi:"試走 98%",state:"dryrun"},
+  {id:"LH-A10",title:"営業支援SaaS ｜ 売り先未定",use:"架電営業",ptn:"—",target:40,stat:"split",statLabel:"与件分解",kpi:"仮説 3 案",state:"decompose"},
+  {id:"LH-A06",title:"給食 委託会社（協会名簿）",use:"架電営業",ptn:"B",target:341,stat:"done",statLabel:"完了",kpi:"電話 99.7%",state:"done"},
+];
+let activeId="LH-A07";
+
+function renderQueue(){
+  document.getElementById("queue").innerHTML=jobs.map(j=>`
+    <button class="job ${j.id===activeId?'active':''}" data-id="${j.id}" aria-pressed="${j.id===activeId}">
+      <div class="r1"><span class="code">${j.id}</span><span class="tag ${j.stat}">${j.statLabel}</span></div>
+      <div class="title">${j.title}</div>
+      <div class="r2"><span>${j.use} · 目標 ${j.target.toLocaleString()}</span><span class="num">${j.kpi}</span></div>
+    </button>`).join("");
+  document.querySelectorAll(".job").forEach(b=>b.addEventListener("click",()=>{activeId=b.dataset.id;renderQueue();renderDetail();}));
+}
+
+function dhead(j,metaExtra){
+  return `<div class="dhead">
+    <div class="kick"><span class="code">${j.id}</span><span class="tag ${j.stat}">${j.statLabel}</span></div>
+    <h2>${j.title}</h2>
+    <div class="meta"><span>用途 <b>${j.use}</b></span><span>パターン <b>${j.ptn}</b></span><span>目標 <b class="num">${j.target.toLocaleString()} 件</b></span>${metaExtra||""}</div>
+  </div>`;
+}
+
+const step=(cls,no,nm,d,pct,val)=>`
+  <div class="step ${cls}">
+    <span class="no">${no}</span>
+    <span class="nm">${nm}<span class="d">${d}</span></span>
+    <span class="bar"><span style="width:${pct}%"></span></span>
+    <span class="val num">${val}</span>
+  </div>`;
+
+function viewDone(j){
+  return dhead(j,`<span>所要 <b>38 分</b></span>`)+`
+  <div class="sec">
+    <div class="stats">
+      <div class="stat"><div class="k">納品</div><div class="v num">605<span class="unit">件</span></div><div class="s num">母集団 704 社</div></div>
+      <div class="stat"><div class="k">本社代表電話</div><div class="v num">86%</div><div class="s num">合格ライン 85%</div></div>
+      <div class="stat"><div class="k">公式サイト</div><div class="v num">90%</div><div class="s num">634 / 704</div></div>
+      <div class="stat"><div class="k">要確認</div><div class="v num">23<span class="unit">件</span></div><div class="s">架電前の目視対象</div></div>
+    </div>
+    <div class="note ok">品質バー達成 — good 582 件 / 要確認 23 件。Tier 内訳: S 42 · A 118 · B 301 · C 144</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>収穫パイプライン</h3><span class="hint">母集団 → 公式サイト → 本社代表電話 → 出力</span></div>
+    <div class="steps">
+      ${step("ok","1","母集団収集","求人ボックス",100,"<b>704</b> 社")}
+      ${step("ok","2","公式サイト特定","find_sites.py",90,"<b>90%</b>")}
+      ${step("ok","3","本社代表電話","extract_phones.py",86,"<b>86%</b>")}
+      ${step("ok","4","出力","Sheets + CSV",100,"<b>605</b> 行")}
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>出力</h3><span class="hint">Stage 4 納品物</span></div>
+    <div class="linkrow">
+      <a class="filelink" href="#" onclick="return false"><span><span class="t">食品製造×営業求人 2026-07-28</span><br><span class="u">docs.google.com/spreadsheets/…/edit</span></span></a>
+      <button class="btn">final.csv</button><button class="btn">_meta.json</button>
+      <span style="flex:1"></span><button class="btn btn-primary">Stage 5 評価へ（架電後）</button>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>プレビュー</h3><span class="hint">上位 5 社</span></div>
+    <div class="tblwrap"><table>
+      <thead><tr><th>会社名</th><th>本社代表電話</th><th>Tier</th><th>都道府県</th><th>判定</th></tr></thead>
+      <tbody>
+        <tr><td class="nm">日本フードパッケージ㈱</td><td class="tel">03-3812-4501</td><td>S</td><td>東京都</td><td><span class="tag done">good</span></td></tr>
+        <tr><td class="nm">丸信食品工業㈱</td><td class="tel">052-611-7788</td><td>S</td><td>愛知県</td><td><span class="tag done">good</span></td></tr>
+        <tr><td class="nm">㈱ハクショク総研</td><td class="tel">06-6392-1200</td><td>A</td><td>大阪府</td><td><span class="tag done">good</span></td></tr>
+        <tr><td class="nm">サンライズ食品㈱</td><td class="tel">045-330-8810</td><td>A</td><td>神奈川県</td><td><span class="tag wait">要確認</span></td></tr>
+        <tr><td class="nm">大和製菓工業㈱</td><td class="tel">078-360-5566</td><td>B</td><td>兵庫県</td><td><span class="tag done">good</span></td></tr>
+      </tbody></table></div>
+  </div>`;
+}
+
+function viewRunning(j){
+  return dhead(j,`<span>経過 <b class="num">04:12</b></span>`)+`
+  <div class="sec">
+    <div class="stats">
+      <div class="stat"><div class="k">現在</div><div class="v">Stage 2</div><div class="s">公式サイト特定</div></div>
+      <div class="stat"><div class="k">進捗</div><div class="v num">59 / 96</div><div class="s num">62% · ETA 6 分</div></div>
+      <div class="stat"><div class="k">母集団</div><div class="v num">96<span class="unit">社</span></div><div class="s num">重複除外 −11</div></div>
+      <div class="stat"><div class="k">実行環境</div><div class="v" style="font-size:14px;line-height:2">caffeinate</div><div class="s">夜間放置可</div></div>
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>収穫パイプライン</h3><span class="hint num">10:41 更新</span></div>
+    <div class="steps">
+      ${step("ok","1","母集団収集","集約ソース",100,"<b>96</b> 社")}
+      ${step("run","2","公式サイト特定","find_sites.py 実行中",62,"<b>62%</b>")}
+      ${step("todo","3","本社代表電話","extract_phones.py",0,"待機")}
+      ${step("todo","4","出力","Sheets + CSV",0,"待機")}
+    </div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>直近のイベント</h3><span class="hint">/tmp/lh_crawl.log</span></div>
+    <div class="tblwrap"><table>
+      <thead><tr><th>時刻</th><th>ステージ</th><th>イベント</th></tr></thead>
+      <tbody>
+        <tr><td class="tel">10:41:07</td><td>find_sites</td><td>㈱メディカルストアサービス → site OK</td></tr>
+        <tr><td class="tel">10:41:03</td><td>find_sites</td><td>共立メンテナンス（売店事業部）→ site OK</td></tr>
+        <tr><td class="tel">10:40:58</td><td>find_sites</td><td>㈱九州フーズ → 候補 2 件・要判定</td></tr>
+        <tr><td class="tel">10:38:20</td><td>collect</td><td>母集団 96 社を確定（重複除外 −11）</td></tr>
+      </tbody></table></div>
+    <div class="actions"><button class="btn">一時停止</button><button class="btn">Discord に進捗通知</button></div>
+  </div>`;
+}
+
+function viewDryrun(j){
+  return dhead(j,`<span>試走 <b class="num">48 件</b></span>`)+`
+  <div class="sec">
+    <div class="note ok">試走の電話取得率 <b>98%</b> — 品質バー（仮 85%）を上回りました。パターン A: HotPepper Beauty の JSON-LD から telephone を直取りでき、本番でも高い取得率が見込めます。</div>
+    <div class="sec" style="margin-top:14px">
+      <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat"><div class="k">試走件数</div><div class="v num">48<span class="unit">社</span></div><div class="s">limit 40 → 48</div></div>
+        <div class="stat"><div class="k">公式サイト率</div><div class="v num">96%</div><div class="s num">46 / 48</div></div>
+        <div class="stat"><div class="k">電話取得率</div><div class="v num">98%</div><div class="s num">47 / 48 · 要確認 1</div></div>
+      </div>
+    </div>
+    <div class="note">本番見込み: 8 都府県で <b>約 2,000 件</b> · 電話 <b>95% 以上</b> · 所要 <b>約 40 分</b>（夜間放置可）</div>
+    <div class="actions"><button class="btn btn-primary">本番実行 GO</button><button class="btn">ソースを変える</button><button class="btn">パターン再判定</button></div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>試走パイプライン</h3><span class="hint">Stage 0.5</span></div>
+    <div class="steps">
+      ${step("ok","1","母集団収集","crawl.py --limit 40",100,"<b>48</b> 社")}
+      ${step("ok","2","公式サイト特定","HotPepper JSON-LD",96,"<b>96%</b>")}
+      ${step("ok","3","本社代表電話","telephone 直取り",98,"<b>98%</b>")}
+      ${step("todo","4","出力","GO 判断後にまとめて",0,"待機")}
+    </div>
+  </div>`;
+}
+
+function viewDecompose(j){
+  return dhead(j)+`
+  <div class="sec">
+    <div class="note">与件: <b>営業支援SaaS を売りたいが、刺さるターゲットが未定</b>。外から観測できるシグナルで仮説を 3 案に分解し、各案 40 件の小ロットで並列検証します。</div>
+  </div>
+  <div class="sec">
+    <div class="sec-h"><h3>検証仮説</h3><span class="hint">Stage −2 · 各 40 件で並列試走</span></div>
+    <div>
+      <div class="hyp"><span class="no">1</span><div><h4>営業職を積極採用している会社</h4><p>営業を増やしている＝営業効率に投資余地。求人媒体で「営業」職を出す会社を母集団化。</p><div class="m"><span>シグナル <b>求人</b></span><span>想定 <b>PTN C</b></span><span>ソース <b>求人ボックス</b></span><span>取得性 <b>高</b></span></div></div></div>
+      <div class="hyp"><span class="no">2</span><div><h4>営業代行を外部委託している業界</h4><p>既に外注に払っている＝ツール置換の予算がある。営業代行の導入事例に載る発注側企業を抽出。</p><div class="m"><span>シグナル <b>委託</b></span><span>想定 <b>PTN C/D</b></span><span>ソース <b>代行社の実績</b></span><span>取得性 <b>中</b></span></div></div></div>
+      <div class="hyp"><span class="no">3</span><div><h4>新規事業を立ち上げ中の会社</h4><p>立ち上げ期は仕組みが未整備＝導入障壁が低い。プレスリリース・資金調達から抽出。</p><div class="m"><span>シグナル <b>成長</b></span><span>想定 <b>PTN D</b></span><span>ソース <b>PR TIMES</b></span><span>取得性 <b>中</b></span></div></div></div>
+    </div>
+    <div class="actions"><button class="btn btn-primary">3 仮説を各 40 件で試走</button><button class="btn">仮説を編集</button></div>
+  </div>`;
+}
+
+function renderDetail(){
+  const j=jobs.find(x=>x.id===activeId);
+  const map={done:viewDone,running:viewRunning,dryrun:viewDryrun,decompose:viewDecompose};
+  document.getElementById("detail").innerHTML=map[j.state](j);
+}
+
+const overlay=document.getElementById("overlay");
+document.getElementById("newJobBtn").addEventListener("click",()=>overlay.classList.add("open"));
+document.getElementById("closeModal").addEventListener("click",()=>overlay.classList.remove("open"));
+document.getElementById("cancelModal").addEventListener("click",()=>overlay.classList.remove("open"));
+document.getElementById("createJob").addEventListener("click",()=>{overlay.classList.remove("open");activeId="LH-A08";renderQueue();renderDetail();});
+overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.classList.remove("open");});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")overlay.classList.remove("open");});
+
+renderQueue();renderDetail();
+</script>
+</body>
+</html>
