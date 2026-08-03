@@ -17,6 +17,7 @@ last_touched: 2026-08-03
 - **新規/変更ファイル**: `worker/decompose.py`（新）/ `worker/run_worker.py`（decompose 分岐+dryrun自動投入+recipe upsert）/ `worker/.env.example`（GEMINI/BRAVE）/ `web/src/lib/queries.ts`（createJob 自動投入）/ `api-types.ts`（RunDTO.kind に decompose）/ `NewJobModal.tsx`（文言）。DB マイグレーション不要。
 - **実コール検証済**: 既存経路「美容師求人」→hotpepper マッチ ✅ ／ 新規経路「リフォーム会社」→ Brave 発見で **ホームプロ(homepro.jp・企業ページ1032件)を自動採用** ✅（比較記事ブログ/小規模sitemap/自己検証失敗を三段ゲートで自動排除）。tsc/py_compile/オフラインunit 緑。
 - **要 env（worker/.env）**: `GEMINI_API_KEY` + `BRAVE_API_KEY`（両方投入済み）。
+- **UI 進捗可視化（2026-08-03 追加・push 済み d52579a）**: detail 上部に **5段フェーズバー**（与件分解→試走→GO判断→本番→完了・現在地をハイライト）。与件分解画面は古い「Phase 3」文言を撤去し、**worker 未起動時「ワーカー起動待ち」+起動コマンド表示**／実行中はライブログ（Gemini/Brave の進捗）を表示。`Console.tsx` PhaseBar/EventsLog、`globals.css` .phasebar。※「動いてない」の主因は **worker 未起動**（decompose run が queued のまま）＝Mac で `cd worker && .venv/bin/python run_worker.py` を起動すれば処理が進む。
 - **上位計画**: `~/.claude/plans/users-sorasasaki-work-os-02-projects-ra-zesty-wombat.md`
 
 ## 現在のフェーズ
