@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sorasasaki.rakurisu-worker</string>
+
+    <!-- caffeinate -i でアイドルスリープを防ぎつつ worker を常駐実行。
+         DATABASE_URL / GEMINI_API_KEY / BRAVE_API_KEY は run_worker が worker/.env から読む（plist に秘密は置かない）。 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>/Users/sorasasaki/work-os/02_projects/rakurisu/worker/.venv/bin/python</string>
+        <string>/Users/sorasasaki/work-os/02_projects/rakurisu/worker/run_worker.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/sorasasaki/work-os/02_projects/rakurisu/worker</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/sorasasaki</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/rakurisu-worker.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/rakurisu-worker.err.log</string>
+</dict>
+</plist>
