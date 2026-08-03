@@ -5,9 +5,9 @@ import useSWR from "swr";
 import { fetcher, postJson } from "@/lib/fetcher";
 import { RAKURISU_ICON } from "@/lib/brand";
 import type {
+  EventDTO,
   JobDetail,
   QueueResponse,
-  RecipeSummary,
   StageDTO,
 } from "@/lib/api-types";
 import { NewJobModal } from "./NewJobModal";
@@ -236,7 +236,120 @@ function Pipeline({ stages, hint }: { stages: StageDTO[]; hint?: string }) {
   );
 }
 
+/* ── 上部フェーズバー（今どのフェーズにいるか） ── */
+const PHASES = [
+  { key: "decompose", label: "与件分解", hint: "AI がソース発見・レシピ生成" },
+  { key: "dryrun", label: "試走", hint: "小ロットで歩留まり測定" },
+  { key: "judge", label: "GO 判断", hint: "結果を見て本番可否" },
+  { key: "production", label: "本番", hint: "全量クロール" },
+  { key: "done", label: "完了", hint: "リスト納品" },
+];
+
+function phaseIndex(detail: JobDetail): number {
+  const st = detail.state;
+  const kind = detail.latestRun?.kind;
+  if (st === "decompose") return 0;
+  if (st === "draft") return 1;
+  if (st === "running") return kind === "production" ? 3 : 1;
+  if (st === "dryrun") return 2;
+  if (st === "done") return 4;
+  if (st === "error") {
+    if (kind === "decompose") return 0;
+    if (kind === "production") return 3;
+    return 1;
+  }
+  return -1;
+}
+
+function PhaseBar({ detail }: { detail: JobDetail }) {
+  const cur = phaseIndex(detail);
+  const isError = detail.state === "error";
+  return (
+    <div className="phasebar" role="group" aria-label="進捗フェーズ">
+      {PHASES.map((p, i) => {
+        let cls: string;
+        if (cur < 0) cls = "todo";
+        else if (i < cur) cls = "done";
+        else if (i === cur) cls = isError ? "err" : "active";
+        else cls = "todo";
+        return (
+          <div className={`phase ${cls}`} key={p.key}>
+            <span className="dot">{cls === "done" ? "✓" : cls === "err" ? "!" : i + 1}</span>
+            <span className="lab">
+              {p.label}
+              <span className="h">{p.hint}</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function headExtra(detail: JobDetail): React.ReactNode {
+  const st = detail.state;
+  if (st === "running")
+    return <span>種別 <b>{detail.latestRun?.kind === "production" ? "本番" : "試走"}</b></span>;
+  if (st === "dryrun")
+    return <span>試走 <b className="num">{detail.stats.population ?? 0} 件</b></span>;
+  if (st === "done" && detail.latestRun?.finishedAt)
+    return <span>完了 <b>{new Date(detail.latestRun.finishedAt).toLocaleString("ja-JP")}</b></span>;
+  return undefined;
+}
+
+function EventsLog({ events, title, hint }: { events: EventDTO[]; title: string; hint: string }) {
+  return (
+    <div className="sec">
+      <div className="sec-h">
+        <h3>{title}</h3>
+        <span className="hint">{hint}</span>
+      </div>
+      <div className="tblwrap">
+        <table>
+          <thead>
+            <tr>
+              <th>時刻</th>
+              <th>ステージ</th>
+              <th>イベント</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.length === 0 && (
+              <tr>
+                <td colSpan={3}>まだイベントはありません</td>
+              </tr>
+            )}
+            {events.map((e, i) => (
+              <tr key={i}>
+                <td className="tel">{new Date(e.ts).toLocaleTimeString("ja-JP")}</td>
+                <td>{e.stage ?? ""}</td>
+                <td>{e.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function Detail({
+  detail,
+  onEnqueue,
+}: {
+  detail: JobDetail;
+  onEnqueue: (jobId: string, kind: "dryrun" | "production") => Promise<void>;
+}) {
+  return (
+    <>
+      <DHead detail={detail} extra={headExtra(detail)} />
+      <PhaseBar detail={detail} />
+      <DetailBody detail={detail} onEnqueue={onEnqueue} />
+    </>
+  );
+}
+
+function DetailBody({
   detail,
   onEnqueue,
 }: {
@@ -247,29 +360,24 @@ function Detail({
 
   if (st === "draft") {
     return (
-      <>
-        <DHead detail={detail} />
-        <div className="sec">
-          <div className="note">
-            レシピ <b>{detail.recipeSource ?? "未設定"}</b> で準備完了。まず
-            <b> 試走（--limit 40）</b>で歩留まりを測り、良ければ本番へ。
-          </div>
-          <div className="actions">
-            <button className="btn btn-primary" onClick={() => onEnqueue(detail.id, "dryrun")}>
-              試走 40 件を実行
-            </button>
-          </div>
+      <div className="sec">
+        <div className="note">
+          レシピ <b>{detail.recipeSource ?? "未設定"}</b> で準備完了。まず
+          <b> 試走（--limit 40）</b>で歩留まりを測り、良ければ本番へ。
         </div>
-      </>
+        <div className="actions">
+          <button className="btn btn-primary" onClick={() => onEnqueue(detail.id, "dryrun")}>
+            試走 40 件を実行
+          </button>
+        </div>
+      </div>
     );
   }
 
   if (st === "running") {
     const active = detail.stages.find((s) => s.status === "running");
-    const kind = detail.latestRun?.kind === "production" ? "本番" : "試走";
     return (
       <>
-        <DHead detail={detail} extra={<span>種別 <b>{kind}</b></span>} />
         <div className="sec">
           <div className="stats">
             <div className="stat">
@@ -300,37 +408,7 @@ function Detail({
           </div>
         </div>
         <Pipeline stages={detail.stages} hint="実行中" />
-        <div className="sec">
-          <div className="sec-h">
-            <h3>直近のイベント</h3>
-            <span className="hint">worker log</span>
-          </div>
-          <div className="tblwrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>時刻</th>
-                  <th>ステージ</th>
-                  <th>イベント</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.events.length === 0 && (
-                  <tr>
-                    <td colSpan={3}>まだイベントはありません</td>
-                  </tr>
-                )}
-                {detail.events.map((e, i) => (
-                  <tr key={i}>
-                    <td className="tel">{new Date(e.ts).toLocaleTimeString("ja-JP")}</td>
-                    <td>{e.stage ?? ""}</td>
-                    <td>{e.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <EventsLog events={detail.events} title="直近のイベント" hint="worker log" />
       </>
     );
   }
@@ -341,7 +419,6 @@ function Detail({
     const trial = detail.stats.population;
     return (
       <>
-        <DHead detail={detail} extra={<span>試走 <b className="num">{trial ?? 0} 件</b></span>} />
         <div className="sec">
           <div className="note ok">
             試走の電話取得率 <b>{phone ?? "—"}%</b> — 品質バー（仮 85%）
@@ -388,16 +465,6 @@ function Detail({
     const s = detail.stats;
     return (
       <>
-        <DHead
-          detail={detail}
-          extra={
-            detail.latestRun?.finishedAt ? (
-              <span>
-                完了 <b>{new Date(detail.latestRun.finishedAt).toLocaleString("ja-JP")}</b>
-              </span>
-            ) : undefined
-          }
-        />
         <div className="sec">
           <div className="stats">
             <div className="stat">
@@ -501,38 +568,63 @@ function Detail({
   }
 
   if (st === "error") {
+    const failedAt = detail.latestRun?.kind;
     return (
       <>
-        <DHead detail={detail} />
         <div className="sec">
           <div className="note flag">
-            実行に失敗しました: <b>{detail.latestRun?.error ?? "不明なエラー"}</b>
+            {failedAt === "decompose" ? "与件分解に失敗しました" : "実行に失敗しました"}:{" "}
+            <b>{detail.latestRun?.error ?? "不明なエラー"}</b>
           </div>
           <div className="actions">
-            <button className="btn btn-primary" onClick={() => onEnqueue(detail.id, "dryrun")}>
-              試走から再実行
-            </button>
+            {detail.recipeSource ? (
+              <button className="btn btn-primary" onClick={() => onEnqueue(detail.id, "dryrun")}>
+                試走から再実行
+              </button>
+            ) : (
+              <div className="note">
+                レシピが未確定のため、<b>新規ジョブ</b>で与件の表現を変えてお試しください
+                （ディレクトリが見つからない／対象が C・D パターンの可能性）。
+              </div>
+            )}
           </div>
         </div>
+        {detail.events.length > 0 && (
+          <EventsLog events={detail.events} title="ログ" hint="worker log" />
+        )}
       </>
     );
   }
 
-  // decompose（Phase 3 で Gemini 実装。MVP は拡張口のみ）
+  // decompose — AI（Gemini + Brave）が与件を分解しレシピを自動生成中
+  const dq = detail.latestRun?.status;
   return (
     <>
-      <DHead detail={detail} />
       <div className="sec">
         <div className="note">
           与件: <b>{detail.brief ?? "（未入力）"}</b>
           <br />
-          外から観測できるシグナルで仮説に分解し、各案を小ロットで並列検証します。
+          AI が構造化ソースを発見し、抽出レシピを自動生成 → そのまま試走（dryrun）まで自走します。
         </div>
-        <div className="note flag">
-          与件分解（Gemini）は Phase 3 で実装予定。現在は A/B（構造化ソース）
-          パターンの通貫のみ対応しています。
-        </div>
+        {dq === "queued" && (
+          <div className="note flag">
+            ワーカー起動待ち — Mac でワーカーを起動すると与件分解が始まります。
+            <br />
+            <span className="code">cd worker &amp;&amp; .venv/bin/python run_worker.py</span>
+          </div>
+        )}
+        {dq === "running" && (
+          <div className="note ok">
+            AI が与件を分解中… 下のログにソース発見〜レシピ生成の進捗が出ます（数分）。
+          </div>
+        )}
+        {dq === "error" && (
+          <div className="note flag">
+            与件分解に失敗: <b>{detail.latestRun?.error ?? "不明なエラー"}</b>
+          </div>
+        )}
       </div>
+      <EventsLog events={detail.events} title="与件分解ログ" hint="Gemini / Brave" />
     </>
   );
 }
