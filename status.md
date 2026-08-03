@@ -1,23 +1,29 @@
 ---
 name: rakurisu
 status: active
-next_action: Sora が localhost:3060 で Google ログイン（Step 6）→ UI から実ジョブ（hotpepper 40件）を回すだけ。基盤は検証済み。
+next_action: 次セッション — ① git 連携（GitHub push、gh は token 方式）② Vercel に env 投入 → web をデプロイし共有 URL 化（worker は Mac 常駐・Neon 共有）。ローカルデモは PUBLIC_DEMO=1 で稼働中。
 due:
-last_touched: 2026-07-31
+last_touched: 2026-08-03
 ---
 
 # ラクリス（lead-harvest webapp）— status
 
 ## 現在のフェーズ
-フルスタック MVP 完成 + **通貫検証済み**。Neon 接続・db:push・seed・ワーカー実行まで実データで確認。残るは Sora の Google ログインだけ。
+フルスタック MVP 完成 + 通貫検証済み + **統合済み（1 repo）**。ローカルで **ログイン無しデモが稼働**（`PUBLIC_DEMO=1`）。次は GitHub push + Vercel デプロイで共有 URL 化。
+
+## 次セッション TODO（2026-08-03 合意）
+1. **git 連携**: `sky0508/rakurisu` を作成し push。gh は device code 期限切れ ×2 のため **token 方式**（PAT `repo` スコープ → `gh auth login --with-token`）。secret 3種（.env.local / worker/.env / .next 等）は非追跡を維持
+2. **Vercel デプロイ（web のみ）**: Vercel に env 投入（`DATABASE_URL` / `SESSION_SECRET` / `GOOGLE_*` / `NEXT_PUBLIC_APP_URL`=本番 URL / `PUBLIC_DEMO`）→ web をデプロイし共有 URL 化。worker は Mac 常駐のまま同じ Neon を共有。詳細手順は `DEPLOY.md`
+3. デモ充実（任意）: done/running 等の状態を実データでシード（今は LH-SMOKE 1 件のみ）
+- 認証は当面 **C（PUBLIC_DEMO・ログイン無し・noindex）** でデモ共有。恒久方針は spec §11-2 で再確定
 
 ## 統合・現況更新（2026-08-03）
 
 - **統合完了**: モック＋docs だけの `rakurisu/` と、実装本体 `lead-harvest-web/` を **1 リポジトリ `rakurisu/` に統合**（web/ + worker/ + docs/ + SETUP/DEPLOY + brand + docs/mock.html）。旧 `lead-harvest-web/` は削除。git 履歴は rakurisu 側を継続。
 - **env 現況**: `web/.env.local` は 7 キー投入済み（DATABASE_URL/SESSION_SECRET/GOOGLE_*×3/ALLOW_DOMAIN/NEXT_PUBLIC_APP_URL）。`worker/.env` も DATABASE_URL 済み。Neon 作成・`db:push`・`seed:recipes` 済み。→ **下の「次のアクション」1〜5,7 は完了**。残るは Sora の Google ログイン + 実ジョブ。
 - **【要判断】認証方針**: Sora 指示「**誰でも閲覧できるように**」。現状は Google OAuth + `ALLOW_DOMAIN` 限定。leads=実在企業の電話リスト（AlphaDrive 業務データ）のため、**「誰でも」の水準を確定してから実装**（完全公開 / Google ログイン要・ドメイン不問 / URL＝鍵）。spec §11-2 参照。
-- **dev server**: web/ 移動により旧パスの `next dev :3060`（pid 88032）は無効化。`cd web && pnpm dev` で再起動が必要。
-- **GitHub/共有**: まだローカル git のみ（push 未）。gh は device code 期限切れ ×2 → token 方式 or Vercel 先行が次善。
+- **dev server / デモ**: web/ 移動後に `.next` を掃除して Turbopack パニック解消。`PUBLIC_DEMO=1`（`web/.env.local`）で **proxy.ts の認証ゲートを外し、ログイン無しで `/`→コンソール表示**。noindex 済み（`app/layout.tsx` robots）。localhost:3060 で `/`=200・`/api/jobs`=Neon 実データ（LH-SMOKE 1件）を確認。認証を戻すなら `PUBLIC_DEMO=0`
+- **GitHub/共有**: まだローカル git のみ（push 未）。次セッションで token 方式 push + Vercel デプロイ（上「次セッション TODO」）。
 
 ## 通貫検証（2026-07-31・実データ）
 - Neon: `pnpm db:push`（strict は TTY 不可のため一時 false で適用→戻した）+ `seed:recipes`（hotpepper 投入）済み

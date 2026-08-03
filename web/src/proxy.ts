@@ -7,6 +7,12 @@ import { SESSION_COOKIE, type RakurisuSession } from "./lib/session";
  * layout でのガードは redirect loop を招くのでここと各 requireAuth に置く。
  */
 export async function proxy(request: NextRequest) {
+  // デモ公開モード（C: URL=鍵・ログイン無し）。PUBLIC_DEMO=1 でゲートを無効化。
+  // ⚠ leads=実在企業の電話リスト。共有は noindex + URL 秘匿が前提（本番で常時 ON にしない）。
+  if (process.env.PUBLIC_DEMO === "1") {
+    return NextResponse.next({ request });
+  }
+
   const sealed = request.cookies.get(SESSION_COOKIE)?.value;
   const password = process.env.SESSION_SECRET;
 

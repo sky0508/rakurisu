@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ラクリス",
   description: "lead-harvest console — B2B リード収集を UI から回す",
+  // 実在企業の連絡先を含むため検索エンジンに載せない（C: URL=鍵）
+  robots: { index: false, follow: false },
 };
 
 export const viewport: Viewport = {
