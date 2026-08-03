@@ -1,15 +1,35 @@
 ---
 name: rakurisu
 status: active
-next_action: 次セッション — ① git 連携（GitHub push、gh は token 方式）② Vercel に env 投入 → web をデプロイし共有 URL 化（worker は Mac 常駐・Neon 共有）。ローカルデモは PUBLIC_DEMO=1 で稼働中。
+next_action: AI 与件分解（Gemini+Brave）実装・実コール検証済み・push 済み（2026-08-03）。web 変更は Vercel 自動デプロイ。残 = ① **worker を Mac 常駐起動**（`cd worker && .venv/bin/python run_worker.py`・GEMINI/BRAVE キー投入済み）→ UI からレシピ「未選択」で与件を入れて起票 → 分解→レシピ生成→dryrun 自走 → GO 待ち画面で本番 GO の**フル E2E をSoraがUIで実走**（新規ソースは実クロールが走る）② 認証恒久方針の確定（spec §11-2）③ 精度改善（レシピ生成失敗時の UI 手動編集・再分解、C/D の API 化は後段）。
 due:
 last_touched: 2026-08-03
 ---
 
 # ラクリス（lead-harvest webapp）— status
 
+## AI 与件分解（Gemini + Brave）実装・実コール検証済み（2026-08-03）
+対話版 lead-harvest の「頭脳」（Claude Code=サブスク定額が担当）を、ヘッドレス worker から使えるよう **Gemini 2.5 Flash + Brave Search** で外付け。従量課金の Claude API は不採用（Sora 判断）。**スコープ = パターン A（与件→ソース発見→レシピ自動生成）**。C/D per-company エンリッチは後段。
+- **Gemini と Brave の分担**: 「考えるのは Gemini、実在するものは Brave/worker が掴む」。**Gemini に URL を名指しさせると幻覚する**（検証で SUUMO の sitemap 捏造を確認）→ Gemini=検索クエリ/url_pattern/抽出正規表現の推論、Brave 検索+worker の sitemap 探索=実在 URL 確定。
+- **フロー**: レシピ無しで起票 → web `createJob` が `runs(kind='decompose')` を自動投入 → worker: ①与件分解+パターン判定（既存レシピマッチも同時）→ ②Brave 検索でソース候補→robots.txt/sitemap から企業ページ URL 収集 → ③url_pattern 推論 → **三段ゲート**（企業ページ≥40 / pattern が実 loc にマッチ / 複数ページで別会社）→ ④実 HTML から抽出レシピ生成+自己検証（候補最大5件を順に試す）→ recipes upsert・job 紐付け → **dryrun 自動投入**（分解〜試走まで自走）→ GO 待ち画面で Sora 承認 → 本番。
+- **確認点 = dryrun ゲートのみ**。**レシピ生成 = ハイブリッド**（既存マッチ優先→無ければ Brave 発見+生成）。C/D は「未対応」明示で error 停止。
+- **配置**: AI は worker 側（Python・Mac ローカル）。HTML fetch 同所／APIキーを Mac に保持／疎結合維持。Gemini は REST 直叩き（新規 dep 無し）・timeout 45s+1リトライ・429 は flash→flash-lite。Brave は既存 `find_sites.brave_key/brave_search` 再利用。
+- **新規/変更ファイル**: `worker/decompose.py`（新）/ `worker/run_worker.py`（decompose 分岐+dryrun自動投入+recipe upsert）/ `worker/.env.example`（GEMINI/BRAVE）/ `web/src/lib/queries.ts`（createJob 自動投入）/ `api-types.ts`（RunDTO.kind に decompose）/ `NewJobModal.tsx`（文言）。DB マイグレーション不要。
+- **実コール検証済**: 既存経路「美容師求人」→hotpepper マッチ ✅ ／ 新規経路「リフォーム会社」→ Brave 発見で **ホームプロ(homepro.jp・企業ページ1032件)を自動採用** ✅（比較記事ブログ/小規模sitemap/自己検証失敗を三段ゲートで自動排除）。tsc/py_compile/オフラインunit 緑。
+- **要 env（worker/.env）**: `GEMINI_API_KEY` + `BRAVE_API_KEY`（両方投入済み）。
+- **上位計画**: `~/.claude/plans/users-sorasasaki-work-os-02-projects-ra-zesty-wombat.md`
+
 ## 現在のフェーズ
-フルスタック MVP 完成 + 通貫検証済み + **統合済み（1 repo）**。ローカルで **ログイン無しデモが稼働**（`PUBLIC_DEMO=1`）。次は GitHub push + Vercel デプロイで共有 URL 化。
+**本番デプロイ完了・共有 URL 稼働中**（https://rakurisu.vercel.app・デモ公開・ログイン無し・noindex）。GitHub private repo `sky0508/rakurisu` + Vercel（Hobby / 個人 Gmail アカウント・git 連携で main push→自動デプロイ）。
+
+## git 連携 + Vercel デプロイ完了（2026-08-03）
+- **GitHub**: `sky0508/rakurisu` を **private** で作成し push 済み。認証は `gh auth login --with-token` が `read:org` 不足で弾かれたため **`GH_TOKEN=<PAT> gh repo create --private --source=. --push` で回避**（PAT は `repo` のみでも作成/push 可）。使用した PAT はチャット露出のため **revoke 済み** → 次に CLI push するときは **`repo` + `read:org` 両方**付けた新 PAT を作れば `--with-token` が一発で通る。
+- **Vercel**: Root Directory=`web`（初回 import で設定漏れ→後から Settings で修正して Redeploy）。env は import 時に飛んでいたため **`web/.env.local` を Import .env / paste で一括投入**（7キー、3環境チェック）。`NEXT_PUBLIC_APP_URL` は本番URLに修正。`PUBLIC_DEMO=1` 投入 + Redeploy で `/` の 307→200（デモゲート解除）を確認。`/api/jobs` が Neon 実データ（LH-SMOKE）を返すことも確認。
+- **worker は未起動**: 既存 LH-SMOKE 1件は Neon にあるので URL は見れるが、**新規ジョブ実行には worker を Mac 常駐で起動**（`DEPLOY.md` §6・同じ Neon を poll）する必要あり。
+- **env Tips**: Vercel の env 変更は **Redeploy しないと反映されない**（Build Cache 外し推奨）。新 UI の環境変数は Settings → **Environments → 各環境（Production 等）をクリック**した先にある。ローカル .env を **`pbcopy` でクリップボード投入**すると値をチャットに出さず貼れる。
+
+## 現在のフェーズ（旧）
+フルスタック MVP 完成 + 通貫検証済み + **統合済み（1 repo）**。ローカルで **ログイン無しデモが稼働**（`PUBLIC_DEMO=1`）。
 
 ## 次セッション TODO（2026-08-03 合意）
 1. **git 連携**: `sky0508/rakurisu` を作成し push。gh は device code 期限切れ ×2 のため **token 方式**（PAT `repo` スコープ → `gh auth login --with-token`）。secret 3種（.env.local / worker/.env / .next 等）は非追跡を維持
@@ -19,7 +39,7 @@ last_touched: 2026-08-03
 
 ## 統合・現況更新（2026-08-03）
 
-- **統合完了**: モック＋docs だけの `rakurisu/` と、実装本体 `lead-harvest-web/` を **1 リポジトリ `rakurisu/` に統合**（web/ + worker/ + docs/ + SETUP/DEPLOY + brand + docs/mock.html）。旧 `lead-harvest-web/` は削除。git 履歴は rakurisu 側を継続。
+- **統合完了**: モック＋docs だけの `rakurisu/` と、実装本体 `rakurisu/` を **1 リポジトリ `rakurisu/` に統合**（web/ + worker/ + docs/ + SETUP/DEPLOY + brand + docs/mock.html）。旧 `rakurisu/` は削除。git 履歴は rakurisu 側を継続。
 - **env 現況**: `web/.env.local` は 7 キー投入済み（DATABASE_URL/SESSION_SECRET/GOOGLE_*×3/ALLOW_DOMAIN/NEXT_PUBLIC_APP_URL）。`worker/.env` も DATABASE_URL 済み。Neon 作成・`db:push`・`seed:recipes` 済み。→ **下の「次のアクション」1〜5,7 は完了**。残るは Sora の Google ログイン + 実ジョブ。
 - **【要判断】認証方針**: Sora 指示「**誰でも閲覧できるように**」。現状は Google OAuth + `ALLOW_DOMAIN` 限定。leads=実在企業の電話リスト（AlphaDrive 業務データ）のため、**「誰でも」の水準を確定してから実装**（完全公開 / Google ログイン要・ドメイン不問 / URL＝鍵）。spec §11-2 参照。
 - **dev server / デモ**: web/ 移動後に `.next` を掃除して Turbopack パニック解消。`PUBLIC_DEMO=1`（`web/.env.local`）で **proxy.ts の認証ゲートを外し、ログイン無しで `/`→コンソール表示**。noindex 済み（`app/layout.tsx` robots）。localhost:3060 で `/`=200・`/api/jobs`=Neon 実データ（LH-SMOKE 1件）を確認。認証を戻すなら `PUBLIC_DEMO=0`
@@ -31,6 +51,14 @@ last_touched: 2026-08-03
 - 修正: worker venv に `requests` 追加（find_sites/upload_sheet が使用）
 - セキュリティ: `.env.local.example` に一時混入した実 secret をプレースホルダへ回収（未コミットで無害化・値は `.env.local` に保全）
 - 残: Sora の Google ログイン（interactive）→ UI から本番 40件
+
+## 認証方針（2026-08-03 変更）
+- **ドメイン制限を外した** → `ALLOW_DOMAIN` は任意（未設定＝どの Google アカウントでもログイン可）。callback は env があれば絞る実装。
+- ⚠ 真の関門は **GCP OAuth 同意画面**：Internal だと外部アカウント不可。「誰でも」にするには **External + Publish**（scope は openid/email/profile の非機密のみ＝審査不要で即公開可）。
+- 「ログイン自体なし（完全公開）」にするかは保留（実クロール＝コスト走るので認証は残す推奨）。
+
+## プロジェクト名
+2026-08-03 に dir を `lead-harvest-web` → **`rakurisu`** にリネーム（`02_projects/rakurisu/`）。web の package name は元から rakurisu。worker の REPO_ROOT/SKILL_DIR は work-os root 起点なので無影響。
 
 ## 実装済み（2026-07-31）
 - **スタック**: Next 16 + React 19 + Tailwind v4 + Drizzle(Neon/postgres-js) + iron-session + Google ドメイン認証 + pnpm。ポート 3060。
@@ -69,6 +97,8 @@ last_touched: 2026-08-03
 - 上位計画: `~/.claude/plans/rakurisuapp-ui-claude-bubbly-tiger.md`
 
 ## 拡張口（Phase 3+）
-- 与件分解 / パターン判定（Gemini・repo の jva-internship-board gemini-reply.ts 流用）
-- C/D 並列リサーチ（同時数上限ワーカー）
+- ~~与件分解 / パターン判定（Gemini）~~ → **2026-08-03 実装済み（上部参照）**
+- C/D 並列リサーチの API 化（件数比例課金の主戦場・後段スコープ）
+- レシピ生成失敗時の UI 上での手動編集・再分解ボタン
+- Claude 逃がしの実配線（現状 flag 相当の思想のみ・未配線）
 - Vercel デプロイ（web のみ。ワーカーは Mac 常駐のまま）

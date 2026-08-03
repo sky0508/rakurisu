@@ -57,7 +57,7 @@ export type EventDTO = {
 
 export type RunDTO = {
   id: string;
-  kind: "dryrun" | "production" | "validation";
+  kind: "decompose" | "dryrun" | "production" | "validation";
   status: "queued" | "running" | "done" | "error" | "canceled";
   limitN: number | null;
   currentStage: string | null;

@@ -84,7 +84,7 @@ export function NewJobModal({
             <div className="field full">
               <label>レシピ（構造化ソース・A/B パターン）</label>
               <select value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
-                <option value="">未選択（与件分解へ / Phase 3）</option>
+                <option value="">未選択（AI が与件分解 → レシピ自動生成 → 試走まで自走）</option>
                 {recipes.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.label ?? r.source}
@@ -145,7 +145,7 @@ export function NewJobModal({
             キャンセル
           </button>
           <button className="btn btn-primary" onClick={create} disabled={saving}>
-            {saving ? "作成中…" : recipeId ? "作成して準備" : "作成"}
+            {saving ? "作成中…" : recipeId ? "作成して準備" : "AI 分解して作成"}
           </button>
         </div>
       </div>

@@ -117,7 +117,7 @@ decompose ─┐
 - 納品: Tier 別 `final.csv` + Google Sheets（仮説モードは結果列 + `_meta.json`）
 - ログ: 本番クロールは `/tmp/lh_crawl.log`（ライブログの供給源）
 
-## 10. コスト設計（この spec の背骨・lead-harvest-web 由来）
+## 10. コスト設計（この spec の背骨・rakurisu 由来）
 
 | ステージ | LLM | コスト特性 |
 |---|---|---|
@@ -133,3 +133,37 @@ decompose ─┐
 2. **【要変更】認証**: 現状 Google OAuth + ドメイン限定（`ALLOW_DOMAIN`）。Sora 方針「**誰でも閲覧できるように**」→ アクセスモデルを変更予定。**ただし leads は実在企業の電話リスト（AlphaDrive 業務データ）。「誰でも」の水準（ログイン無しの完全公開 / Google ログインは要るがドメイン不問 / URL＝鍵）を確定してから実装**（データ露出の判断）
 3. ジョブ ⇔ 案件ディレクトリの紐付けキー（案件スラッグ）
 4. `queued` / `failed` 状態の扱い（実装済み state: draft/running/dryrun/done/error）
+
+## 12. AI 与件分解（Gemini・2026-08-03 実装）
+
+対話版 lead-harvest の「頭脳」（与件分解・パターン判定・ソース選定・レシピ作成）は Claude Code（Max サブスク＝定額）が担っていた。ラクリスの worker はヘッドレスでサブスクを使えないため、この頭脳を **Gemini 2.5 Flash** で外付けする。**従量課金の Claude API は不採用**（Sora 判断）。
+
+### スコープ
+- **本フェーズ = パターン A**（単一構造化ソースからの機械抽出）に限定。与件 → ソース選定 → 抽出レシピ（正規表現）自動生成 → 既存 A/B Python パイプラインで納品まで。
+- C/D（per-company の Web リサーチ・件数比例課金の主戦場）は後段スコープ。判定されたら「未対応」明示で停止。
+
+### フロー
+1. web: レシピ無しで起票 → `createJob` が `jobs.state='decompose'` + `runs(kind='decompose', status='queued')` を投入（自動）。
+2. worker: decompose run を claim → `decompose.run_decompose()`:
+   - ① 与件分解 + パターン判定（既存レシピカタログを渡してマッチ判定も同時に）
+   - 既存レシピにマッチ → それを採用（ハイブリッドの前段）
+   - A/B かつ新規 → ② **Brave 検索でソース発見**（Gemini が検索クエリ、Brave が実在 URL、worker が robots.txt/sitemap を辿って企業ページ URL を収集。Gemini に URL を名指しさせない＝幻覚回避）→ ③ 実 URL 群から url_pattern 推論 → **企業ページ数ゲート（40 件未満はディレクトリでないと判定しスキップ）** → ④ 実 HTML から抽出レシピ生成 → **単一ページ自己検証（company 非 null）＋ 複数ページ検証（別ページで別会社が取れるか＝記事/ブログ排除）**。候補は最大 5 件まで順に試す。
+   - recipes に upsert（`source='ai-<code>'`）→ job に紐付け・pattern 更新 → **dryrun を自動投入**
+3. dryrun → 既存パイプライン → `state='dryrun'`（GO 待ち）→ Sora が画面で抽出結果を確認して本番 GO。
+
+### 設計判断
+- **Gemini と Brave の分担 = 「考えるのは Gemini、実在するものは Brave/worker が掴む」**。ソースの URL を Gemini に名指しさせると幻覚する（検証で SUUMO の sitemap 捏造を確認）。→ Gemini は検索クエリ・url_pattern・抽出正規表現の「推論」だけ、Brave 検索と worker の sitemap 探索で実在 URL を確定する。対話版 lead-harvest が Stage 0 で WebSearch を使うのと同型。
+- **偽ソース排除の三段ゲート**: ① 企業ページ数 ≥ 40（比較記事/ブログは少数 → 排除）② url_pattern が実 loc にマッチ ③ 複数ページで別会社が取れる（フッター運営会社を毎回拾う記事サイトを排除）。候補は Brave 上位から最大 5 件試す。
+- **確認点 = dryrun ゲートのみ**（分解〜dryrun は無人自走）。人間は生成レシピの実抽出結果を GO 待ち画面で見て判断する。
+- **レシピ生成 = ハイブリッド**（既存レシピマッチ優先 → 無ければ Brave 発見 + 生成 + 三段ゲート）。
+- **配置 = worker 側（Python・Mac ローカル）**。HTML fetch を同所で行える／API キーを Vercel でなく Mac に置ける（`BRAVE_API_KEY` と同扱い）／既存の疎結合（DB のみで結合）を維持。
+- Gemini は REST を `requests` で直叩き（依存を psycopg + requests のまま維持）。timeout 45s + 1 リトライ、429 は `gemini-2.5-flash` → `gemini-2.5-flash-lite` に自動フォールバック。Brave は既存 `find_sites.brave_key/brave_search` を再利用。
+- DB マイグレーション不要（`runs.kind` / `jobs.pattern` / `jobs.state` は text・CHECK 無し）。
+
+### 主要ファイル
+`worker/decompose.py`（Gemini 3 コール + Brave ソース発見 + sitemap 探索 + 三段ゲート）/ `worker/run_worker.py`（`process_decompose` + dryrun 自動投入 + recipe upsert）/ `web/src/lib/queries.ts`（`createJob` の decompose run 自動投入）/ `web/src/lib/api-types.ts`（`RunDTO.kind` に `decompose`）。
+
+### 検証済み（2026-08-03・実コール）
+- 既存レシピ経路: 「美容師求人」→ hotpepper に正しくマッチ。
+- 新規ソース経路: 「リフォーム会社」→ Brave 発見で **ホームプロ（homepro.jp・企業ページ 1032 件）を自動採用**。比較記事ブログ（gotta-ride）・小規模 sitemap（tsukunobi 29 件）・自己検証失敗（reform-madoguchi）を三段ゲートで自動排除。
+- tsc / py_compile / オフライン unit 緑。

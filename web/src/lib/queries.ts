@@ -292,7 +292,17 @@ export async function createJob(input: CreateJobInput) {
       state,
     })
     .returning();
-  return inserted[0];
+  const job = inserted[0];
+
+  // レシピ無し（与件分解対象）は decompose run を自動投入する。
+  // worker が Gemini で分解 → レシピ生成 → dryrun 自動投入まで自走する。
+  // job.state は "decompose" のまま（enqueueRun と違い running に上げない）。
+  if (!input.recipeId) {
+    await db
+      .insert(runs)
+      .values({ jobId: job.id, kind: "decompose", status: "queued", limitN: null });
+  }
+  return job;
 }
 
 export async function enqueueRun(

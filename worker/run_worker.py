@@ -265,6 +265,116 @@ def load_leads(conn, run_id, jsonl_path, recipe):
     return n
 
 
+# ── 与件分解（AI）───────────────────────────────────────
+def _recipe_id_by_source(conn, source):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM recipes WHERE source = %s", (source,))
+        r = cur.fetchone()
+        return r["id"] if r else None
+
+
+def _upsert_recipe(conn, source, label, recipe_json):
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO recipes (source, label, json) VALUES (%s, %s, %s)
+               ON CONFLICT (source) DO UPDATE SET label = EXCLUDED.label, json = EXCLUDED.json
+               RETURNING id""",
+            (source, label, Json(recipe_json)),
+        )
+        return cur.fetchone()["id"]
+
+
+def _enqueue_dryrun(conn, job_id, limit_n=40):
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO runs (job_id, kind, status, limit_n) VALUES (%s, 'dryrun', 'queued', %s)",
+            (job_id, limit_n),
+        )
+
+
+def process_decompose(conn, run, job):
+    """与件（brief）を Gemini で分解 → レシピ決定 → dryrun を自動投入。"""
+    run_id = run["id"]
+    job_id = run["job_id"]
+    set_run(conn, run_id, current_stage="decompose")
+
+    if not job:
+        set_run(conn, run_id, status="error", error="job が見つかりません", finished_at=now())
+        return
+
+    brief = (job.get("brief") or "").strip()
+    if not brief:
+        set_run(conn, run_id, status="error", error="与件（brief）が空です", finished_at=now())
+        set_job_state(conn, job_id, "error")
+        add_event(conn, run_id, "decompose", "エラー: 与件テキストが空です")
+        return
+
+    try:
+        import decompose as dc
+    except Exception as e:  # noqa: BLE001
+        set_run(conn, run_id, status="error", error=f"decompose import 失敗: {e}"[:500], finished_at=now())
+        set_job_state(conn, job_id, "error")
+        add_event(conn, run_id, "decompose", f"エラー: {e}")
+        return
+
+    def log(stage, message):
+        add_event(conn, run_id, stage, message)
+
+    # 既存レシピカタログ
+    catalog = []
+    with conn.cursor() as cur:
+        cur.execute("SELECT source, label FROM recipes")
+        catalog = [{"source": r["source"], "label": r["label"]} for r in cur.fetchall()]
+
+    try:
+        result = dc.run_decompose(
+            brief=brief,
+            title=job["title"],
+            use_case=job["use_case"],
+            recipes_catalog=catalog,
+            log=log,
+        )
+    except Exception as e:  # noqa: BLE001
+        set_run(conn, run_id, status="error", error=str(e)[:500], finished_at=now())
+        set_job_state(conn, job_id, "error")
+        add_event(conn, run_id, "decompose", f"エラー: {e}")
+        return
+
+    kind_r = result["kind"]
+    if kind_r == "unsupported":
+        set_run(conn, run_id, status="error", error=result["message"][:500], finished_at=now())
+        set_job_state(conn, job_id, "error")
+        add_event(conn, run_id, "decompose", result["message"])
+        return
+
+    # レシピ決定
+    if kind_r == "existing":
+        recipe_id = _recipe_id_by_source(conn, result["recipe_source"])
+        if not recipe_id:
+            set_run(conn, run_id, status="error", error="既存レシピが見つかりません", finished_at=now())
+            set_job_state(conn, job_id, "error")
+            add_event(conn, run_id, "decompose", f"エラー: レシピ {result['recipe_source']} が消えています")
+            return
+    else:  # generated
+        recipe = result["recipe"]
+        source_key = f"ai-{job['code']}".lower()
+        recipe["source"] = source_key
+        recipe_id = _upsert_recipe(conn, source_key, recipe.get("label"), recipe)
+        add_event(conn, run_id, "decompose", f"レシピ生成完了: {source_key}")
+
+    pattern = result.get("pattern") or "A"
+
+    # job を更新して dryrun を自動投入（分解〜試走まで自走）
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE jobs SET recipe_id = %s, pattern = %s, state = 'running', updated_at = now() WHERE id = %s",
+            (recipe_id, pattern, job_id),
+        )
+    set_run(conn, run_id, status="done", current_stage=None, finished_at=now())
+    _enqueue_dryrun(conn, job_id, limit_n=40)
+    add_event(conn, run_id, "decompose", "分解完了 — 試走（dryrun）を自動投入しました")
+
+
 # ── 1 run の実行 ───────────────────────────────────────
 def process_run(conn, run):
     run_id = run["id"]
@@ -272,20 +382,28 @@ def process_run(conn, run):
     kind = run["kind"]
     limit_n = run["limit_n"]
 
-    # job + recipe を取得
+    # job を取得
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM jobs WHERE id = %s", (job_id,))
         job = cur.fetchone()
-        recipe = None
-        if job and job["recipe_id"]:
+
+    # 与件分解 run（AI がレシピを生成 → dryrun 自動投入）
+    if kind == "decompose":
+        process_decompose(conn, run, job)
+        return
+
+    # recipe を取得
+    recipe = None
+    if job and job["recipe_id"]:
+        with conn.cursor() as cur:
             cur.execute("SELECT json FROM recipes WHERE id = %s", (job["recipe_id"],))
             rr = cur.fetchone()
             recipe = rr["json"] if rr else None
 
     if not recipe:
-        set_run(conn, run_id, status="error", error="レシピ未設定（A/B パターンのみ対応）", finished_at=now())
+        set_run(conn, run_id, status="error", error="レシピ未設定（先に与件分解が必要）", finished_at=now())
         set_job_state(conn, job_id, "error")
-        add_event(conn, run_id, None, "レシピが無いため実行できません（Phase 3: 与件分解は未実装）")
+        add_event(conn, run_id, None, "レシピが無いため実行できません（与件分解 run が未完 or 失敗）")
         return
 
     stages = STAGE_ORDER_DRYRUN if kind == "dryrun" else STAGE_ORDER_PROD
