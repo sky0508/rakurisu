@@ -1,7 +1,8 @@
 # ラクリス 実装計画（plan）— 案 B / P1
 
-> ステータス: **ドラフト（Sora レビュー待ち）** / 2026-07-31
-> 前提: `docs/spec.md` §7 で **案 B（DB 集約 + ローカル実行）** 確定。本書は P1（社内が状態を閲覧できる MVP）の how。
+> ⚠️ **この計画の大半は既に実装済み**（別セッションで先行構築、2026-07-31 通貫検証）。実装の現況は `status.md` が正。
+> 本書は当初の設計計画として残す（実装との差分: 認証は共有パスワード案 → 実際は Google OAuth に進化 / スキーマは jobs 中心 → 実際は users/recipes/jobs/runs/run_stages/leads/events / 報告シムは lh_sync 案 → 実際は worker/run_worker.py の poll 方式）。
+> 前提: `docs/spec.md` §7 で **案 B（DB 集約 + ローカル実行）** 確定。
 
 ---
 
