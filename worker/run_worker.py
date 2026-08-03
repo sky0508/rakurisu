@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import re
+import select
 import subprocess
 import sys
 import time
@@ -30,6 +31,10 @@ from pathlib import Path
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
+
+
+class Cancelled(Exception):
+    """ユーザーが停止ボタンを押した（runs.status='canceled'）。"""
 
 
 # ── .env 読み込み（依存なしの軽量ローダー） ─────────────────
@@ -124,6 +129,14 @@ def set_job_state(conn, job_id, state):
         )
 
 
+def is_canceled(conn, run_id):
+    """停止ボタン（API が runs.status='canceled' に更新）を検知する。"""
+    with conn.cursor() as cur:
+        cur.execute("SELECT status FROM runs WHERE id = %s", (run_id,))
+        r = cur.fetchone()
+        return bool(r and r["status"] == "canceled")
+
+
 # ── stdout パーサ ───────────────────────────────────────
 RE_CRAWL_PAGES = re.compile(r"対象ページ:\s*(\d+)")
 RE_CRAWL_PROG = re.compile(r"\[(\d+)\]\s*合格\s*(\d+)")
@@ -152,51 +165,76 @@ def run_stage_subprocess(conn, run_id, stage, cmd, env):
         bufsize=1,
     )
     last_push = 0.0
+    last_cancel_check = 0.0
     assert proc.stdout is not None
-    for raw in proc.stdout:
-        line = raw.rstrip("\n")
-        if not line:
-            continue
-        # パターン別
-        if stage == "crawl":
-            m = RE_CRAWL_PAGES.search(line)
-            if m:
-                result["total"] = int(m.group(1))
-            m = RE_CRAWL_PROG.search(line)
-            if m:
-                result["count"] = int(m.group(2))
-            m = RE_CRAWL_DONE.search(line)
-            if m:
-                result["count"] = int(m.group(1))
-        elif stage in ("find_sites", "extract_phones"):
-            m = RE_IJ.search(line)
-            if m:
-                i, n = int(m.group(1)), int(m.group(2))
-                result["count"], result["total"] = i, n
-                result["rate"] = f"{round(i / n * 100)}%" if n else None
-            m = RE_SITES_DONE.search(line) or RE_PHONE_DONE.search(line)
-            if m:
-                f, n = int(m.group(1)), int(m.group(2))
-                result["count"], result["total"] = f, n
-                result["rate"] = f"{round(f / n * 100)}%" if n else None
-            if "Brave キー未設定" in line:
-                result["skipped"] = True
-        elif stage == "upload":
-            m = RE_CSV.search(line)
-            if m:
-                result["count"] = int(m.group(1))
-                result["csv"] = m.group(2).strip()
-            m = RE_URL.search(line)
-            if m:
-                result["url"] = m.group(1).strip()
 
-        # 進捗を throttle して DB へ（イベントは重要行のみ）
-        t = time.time()
-        if t - last_push > 1.0:
-            set_stage(conn, run_id, stage, count=result["count"], total=result["total"], rate=result["rate"])
-            last_push = t
-        if line.startswith("DONE") or line.startswith("CSV") or line.startswith("URL") or "⚠" in line:
-            add_event(conn, run_id, stage, line)
+    def _terminate():
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    # stdout を select で 1 秒ごとに監視しつつ、停止要求も定期チェック
+    # （crawl は出力が疎なので blocking readline だと停止が効きにくい）。
+    while True:
+        rlist, _, _ = select.select([proc.stdout], [], [], 1.0)
+        if rlist:
+            raw = proc.stdout.readline()
+            if raw == "":  # EOF
+                break
+            line = raw.rstrip("\n")
+            if line:
+                # パターン別
+                if stage == "crawl":
+                    m = RE_CRAWL_PAGES.search(line)
+                    if m:
+                        result["total"] = int(m.group(1))
+                    m = RE_CRAWL_PROG.search(line)
+                    if m:
+                        result["count"] = int(m.group(2))
+                    m = RE_CRAWL_DONE.search(line)
+                    if m:
+                        result["count"] = int(m.group(1))
+                elif stage in ("find_sites", "extract_phones"):
+                    m = RE_IJ.search(line)
+                    if m:
+                        i, n = int(m.group(1)), int(m.group(2))
+                        result["count"], result["total"] = i, n
+                        result["rate"] = f"{round(i / n * 100)}%" if n else None
+                    m = RE_SITES_DONE.search(line) or RE_PHONE_DONE.search(line)
+                    if m:
+                        f, n = int(m.group(1)), int(m.group(2))
+                        result["count"], result["total"] = f, n
+                        result["rate"] = f"{round(f / n * 100)}%" if n else None
+                    if "Brave キー未設定" in line:
+                        result["skipped"] = True
+                elif stage == "upload":
+                    m = RE_CSV.search(line)
+                    if m:
+                        result["count"] = int(m.group(1))
+                        result["csv"] = m.group(2).strip()
+                    m = RE_URL.search(line)
+                    if m:
+                        result["url"] = m.group(1).strip()
+
+                # 進捗を throttle して DB へ（イベントは重要行のみ）
+                t = time.time()
+                if t - last_push > 1.0:
+                    set_stage(conn, run_id, stage, count=result["count"], total=result["total"], rate=result["rate"])
+                    last_push = t
+                if line.startswith("DONE") or line.startswith("CSV") or line.startswith("URL") or "⚠" in line:
+                    add_event(conn, run_id, stage, line)
+        elif proc.poll() is not None:
+            break  # 出力が尽き、プロセスも終了
+
+        # 停止要求チェック（約 1.5 秒ごと）
+        tc = time.time()
+        if tc - last_cancel_check > 1.5:
+            last_cancel_check = tc
+            if is_canceled(conn, run_id):
+                _terminate()
+                raise Cancelled()
 
     proc.wait()
     if proc.returncode != 0:
@@ -333,7 +371,13 @@ def process_decompose(conn, run, job):
             use_case=job["use_case"],
             recipes_catalog=catalog,
             log=log,
+            should_cancel=lambda: is_canceled(conn, run_id),
         )
+    except dc.Cancelled:
+        set_run(conn, run_id, status="canceled", finished_at=now())
+        set_job_state(conn, job_id, "canceled")
+        add_event(conn, run_id, "decompose", "停止しました（ユーザー操作）")
+        return
     except Exception as e:  # noqa: BLE001
         set_run(conn, run_id, status="error", error=str(e)[:500], finished_at=now())
         set_job_state(conn, job_id, "error")
@@ -472,6 +516,10 @@ def process_run(conn, run):
         set_job_state(conn, job_id, "done")
         add_event(conn, run_id, None, "本番完了 — 納品しました")
 
+    except Cancelled:
+        set_run(conn, run_id, status="canceled", current_stage=None, finished_at=now())
+        set_job_state(conn, job_id, "canceled")
+        add_event(conn, run_id, None, "停止しました（ユーザー操作）")
     except Exception as e:  # noqa: BLE001
         set_run(conn, run_id, status="error", error=str(e)[:500], current_stage=None, finished_at=now())
         set_job_state(conn, job_id, "error")
@@ -498,6 +546,26 @@ def fetch_run(conn, run_id):
         return cur.fetchone()
 
 
+def reap_stale(conn):
+    """起動時、'running' のまま残った run（前回の worker が落ちた/再起動された）を
+    停止扱いにする。worker は 1 台前提なので起動時点の running は全て中断済み。"""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, job_id FROM runs WHERE status = 'running'")
+        rows = cur.fetchall()
+        for r in rows:
+            cur.execute(
+                "UPDATE runs SET status='canceled', finished_at=now() WHERE id=%s", (r["id"],)
+            )
+            cur.execute(
+                "UPDATE jobs SET state='canceled', updated_at=now() WHERE id=%s", (r["job_id"],)
+            )
+            cur.execute(
+                "INSERT INTO events (run_id, stage, message) VALUES (%s, NULL, %s)",
+                (r["id"], "ワーカー再起動により中断（停止扱い）"),
+            )
+    return len(rows)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id", help="この run だけ実行（status 無視）")
@@ -519,6 +587,10 @@ def main():
         process_run(conn, run)
         print("[worker] done")
         return
+
+    reaped = reap_stale(conn)
+    if reaped:
+        print(f"[worker] reaped {reaped} stale running run(s) -> canceled")
 
     while True:
         run = claim_one(conn)

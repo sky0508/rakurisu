@@ -45,6 +45,15 @@ class DecomposeError(Exception):
     """与件分解の失敗（worker 側で events に出して job を error にする）。"""
 
 
+class Cancelled(Exception):
+    """ユーザーが停止ボタンを押した（分解の途中で中断）。"""
+
+
+def _ck(should_cancel):
+    if should_cancel and should_cancel():
+        raise Cancelled()
+
+
 # ── Gemini 呼び出し ─────────────────────────────────────
 def _api_key() -> str:
     key = os.environ.get(API_KEY_ENV)
@@ -425,7 +434,7 @@ def _try_candidate(cand: dict, decomp: dict, log):
 
 
 # ── オーケストレーション ────────────────────────────────
-def run_decompose(*, brief: str, title: str, use_case: str, recipes_catalog: list, log) -> dict:
+def run_decompose(*, brief: str, title: str, use_case: str, recipes_catalog: list, log, should_cancel=None) -> dict:
     """与件分解のフル実行。log(stage, message) で進捗を events に流す。
 
     戻り値の kind:
@@ -433,6 +442,7 @@ def run_decompose(*, brief: str, title: str, use_case: str, recipes_catalog: lis
       - "generated"   新規レシピを生成    → {recipe, pattern, source_meta}
       - "unsupported" C/D で本フェーズ対象外 → {pattern, message}
     """
+    _ck(should_cancel)
     log("decompose", "与件分解中（Gemini）…")
     decomp = decompose_brief(brief, title, use_case, recipes_catalog)
     pattern = (decomp.get("pattern") or "").upper()
@@ -450,6 +460,7 @@ def run_decompose(*, brief: str, title: str, use_case: str, recipes_catalog: lis
         return {"kind": "unsupported", "pattern": pattern, "decomp": decomp, "message": msg}
 
     # A/B → Brave で候補ソースを列挙し、実用的な企業ディレクトリを 1 つ選ぶ
+    _ck(should_cancel)
     log("decompose", "構造化ソースを Brave 検索で発見中…")
     candidates = discover_candidates(decomp, title, log)
     if not candidates:
@@ -457,6 +468,7 @@ def run_decompose(*, brief: str, title: str, use_case: str, recipes_catalog: lis
 
     reasons = []
     for cand in candidates[:5]:
+        _ck(should_cancel)
         recipe, meta_or_reason = _try_candidate(cand, decomp, log)
         if recipe:
             return {

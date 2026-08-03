@@ -9,7 +9,8 @@ export type JobState =
   | "dryrun"
   | "running"
   | "done"
-  | "error";
+  | "error"
+  | "canceled";
 
 export type TagKind = "done" | "run" | "wait" | "split";
 

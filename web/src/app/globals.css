@@ -211,6 +211,16 @@ a {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
+.btn-danger {
+  background: #fff;
+  border-color: #d9b3b3;
+  color: #a3352b;
+  font-weight: 600;
+}
+.btn-danger:hover {
+  background: #fbecec;
+  border-color: #c98d8d;
+}
 .btn[disabled] {
   opacity: 0.45;
   cursor: not-allowed;

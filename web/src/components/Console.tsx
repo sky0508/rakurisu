@@ -56,6 +56,11 @@ export function Console() {
     await Promise.all([mutateQueue(), mutateDetail()]);
   }
 
+  async function cancel(jobId: string) {
+    await postJson(`/api/jobs/${jobId}/cancel`, {});
+    await Promise.all([mutateQueue(), mutateDetail()]);
+  }
+
   return (
     <div className="app">
       <aside className="side">
@@ -140,7 +145,7 @@ export function Console() {
             {!detail ? (
               <div className="loading">読み込み中…</div>
             ) : (
-              <Detail detail={detail} onEnqueue={enqueue} />
+              <Detail detail={detail} onEnqueue={enqueue} onCancel={cancel} />
             )}
           </section>
         </div>
@@ -253,7 +258,7 @@ function phaseIndex(detail: JobDetail): number {
   if (st === "running") return kind === "production" ? 3 : 1;
   if (st === "dryrun") return 2;
   if (st === "done") return 4;
-  if (st === "error") {
+  if (st === "error" || st === "canceled") {
     if (kind === "decompose") return 0;
     if (kind === "production") return 3;
     return 1;
@@ -263,14 +268,14 @@ function phaseIndex(detail: JobDetail): number {
 
 function PhaseBar({ detail }: { detail: JobDetail }) {
   const cur = phaseIndex(detail);
-  const isError = detail.state === "error";
+  const stalled = detail.state === "error" || detail.state === "canceled";
   return (
     <div className="phasebar" role="group" aria-label="進捗フェーズ">
       {PHASES.map((p, i) => {
         let cls: string;
         if (cur < 0) cls = "todo";
         else if (i < cur) cls = "done";
-        else if (i === cur) cls = isError ? "err" : "active";
+        else if (i === cur) cls = stalled ? "err" : "active";
         else cls = "todo";
         return (
           <div className={`phase ${cls}`} key={p.key}>
@@ -336,15 +341,17 @@ function EventsLog({ events, title, hint }: { events: EventDTO[]; title: string;
 function Detail({
   detail,
   onEnqueue,
+  onCancel,
 }: {
   detail: JobDetail;
   onEnqueue: (jobId: string, kind: "dryrun" | "production") => Promise<void>;
+  onCancel: (jobId: string) => Promise<void>;
 }) {
   return (
     <>
       <DHead detail={detail} extra={headExtra(detail)} />
       <PhaseBar detail={detail} />
-      <DetailBody detail={detail} onEnqueue={onEnqueue} />
+      <DetailBody detail={detail} onEnqueue={onEnqueue} onCancel={onCancel} />
     </>
   );
 }
@@ -352,9 +359,11 @@ function Detail({
 function DetailBody({
   detail,
   onEnqueue,
+  onCancel,
 }: {
   detail: JobDetail;
   onEnqueue: (jobId: string, kind: "dryrun" | "production") => Promise<void>;
+  onCancel: (jobId: string) => Promise<void>;
 }) {
   const st = detail.state;
 
@@ -405,6 +414,11 @@ function DetailBody({
               <div className="v" style={{ fontSize: 14, lineHeight: 2 }}>caffeinate</div>
               <div className="s">夜間放置可</div>
             </div>
+          </div>
+          <div className="actions">
+            <button className="btn btn-danger" onClick={() => onCancel(detail.id)}>
+              停止
+            </button>
           </div>
         </div>
         <Pipeline stages={detail.stages} hint="実行中" />
@@ -596,6 +610,32 @@ function DetailBody({
     );
   }
 
+  if (st === "canceled") {
+    return (
+      <>
+        <div className="sec">
+          <div className="note flag">
+            停止しました（ユーザー操作）。途中までの結果は破棄されています。
+          </div>
+          <div className="actions">
+            {detail.recipeSource ? (
+              <button className="btn btn-primary" onClick={() => onEnqueue(detail.id, "dryrun")}>
+                試走から再実行
+              </button>
+            ) : (
+              <div className="note">
+                レシピが未確定のため、<b>新規ジョブ</b>で与件を入れ直してください。
+              </div>
+            )}
+          </div>
+        </div>
+        {detail.events.length > 0 && (
+          <EventsLog events={detail.events} title="ログ" hint="worker log" />
+        )}
+      </>
+    );
+  }
+
   // decompose — AI（Gemini + Brave）が与件を分解しレシピを自動生成中
   const dq = detail.latestRun?.status;
   return (
@@ -623,6 +663,11 @@ function DetailBody({
             与件分解に失敗: <b>{detail.latestRun?.error ?? "不明なエラー"}</b>
           </div>
         )}
+        <div className="actions">
+          <button className="btn btn-danger" onClick={() => onCancel(detail.id)}>
+            停止
+          </button>
+        </div>
       </div>
       <EventsLog events={detail.events} title="与件分解ログ" hint="Gemini / Brave" />
     </>

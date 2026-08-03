@@ -31,6 +31,7 @@ export function statusLabelFor(state: JobState): string {
     running: "実行中",
     done: "完了",
     error: "エラー",
+    canceled: "停止",
   }[state];
 }
 
@@ -42,6 +43,7 @@ export function tagFor(state: JobState): TagKind {
     running: "run",
     done: "done",
     error: "wait",
+    canceled: "wait",
   }[state] as TagKind;
 }
 
@@ -100,6 +102,8 @@ function kpiFor(state: JobState, stages: StageDTO[], target: number): string {
       return "与件分解";
     case "error":
       return "エラー";
+    case "canceled":
+      return "停止";
     default:
       return `目標 ${target.toLocaleString()}`;
   }
@@ -303,6 +307,22 @@ export async function createJob(input: CreateJobInput) {
       .values({ jobId: job.id, kind: "decompose", status: "queued", limitN: null });
   }
   return job;
+}
+
+export async function cancelJob(jobId: string) {
+  // 最新 run が queued/running なら canceled に（＝ワーカーへの停止シグナル）。
+  // ワーカーは実行中サブプロセスを検知して終了し、job を canceled にする。
+  const r = await latestRun(jobId);
+  if (r && (r.status === "queued" || r.status === "running")) {
+    await db
+      .update(runs)
+      .set({ status: "canceled", finishedAt: new Date() })
+      .where(eq(runs.id, r.id));
+  }
+  await db
+    .update(jobs)
+    .set({ state: "canceled", updatedAt: new Date() })
+    .where(eq(jobs.id, jobId));
 }
 
 export async function enqueueRun(
