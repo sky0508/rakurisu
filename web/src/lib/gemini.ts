@@ -44,14 +44,19 @@ export const SIGNAL_SYSTEM_PROMPT = `あなたは B2B リード収集（営業�
 - 実在のサイト名・URL を断定しない（例:「SUUMO の sitemap にあります」等は言わない）。実際のソース発見は後段の別システムが担うので、あなたはソースの「種類」までに留める。
 - 結論を急がない。まずシグナルを一緒に見つけることに集中する。`;
 
+/** 一時的（リトライで直る）な HTTP ステータス。429=枠超過, 500/502/503/504=過負荷。 */
+const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * 1 往復の返答を返す。history は過去ターン（user/model 交互）、userMessage は最新の発話。
+ * 一時的な 5xx / 429 はバックオフしてリトライし、途中で flash → flash-lite に落とす
+ * （503 UNAVAILABLE の過負荷や無料枠超過を対話中に極力見せないため）。
  */
 export async function callGemini(
   systemPrompt: string,
   history: ChatTurn[],
-  userMessage: string,
-  model: string = DEFAULT_MODEL
+  userMessage: string
 ): Promise<string> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY 未設定");
@@ -60,42 +65,55 @@ export async function callGemini(
     ...history.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
     { role: "user", parts: [{ text: userMessage }] },
   ];
-  const body = {
+  const body = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
     generationConfig: { temperature: 0.3 },
-  };
+  });
 
-  let resp: Response;
-  try {
-    resp = await fetch(ENDPOINT(model), {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(45_000),
-    });
-  } catch (e) {
-    throw new Error(
-      `Gemini 接続失敗: ${e instanceof Error ? e.message : String(e)}`
-    );
-  }
+  // 最大 4 回: 前半は flash、後半は flash-lite（別キャパシティ）に落とす
+  const attempts = 4;
+  let lastStatus = "";
+  for (let i = 0; i < attempts; i++) {
+    const model = i < 2 ? DEFAULT_MODEL : FALLBACK_MODEL;
+    let resp: Response;
+    try {
+      resp = await fetch(ENDPOINT(model), {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": key },
+        body,
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch {
+      // ネットワーク例外（timeout 含む）→ 少し待って再試行
+      lastStatus = "接続タイムアウト";
+      await sleep(500 * (i + 1));
+      continue;
+    }
 
-  // 429（無料枠 RPD 超過）は flash → flash-lite に 1 回だけ落として再試行
-  if (resp.status === 429 && model !== FALLBACK_MODEL) {
-    await new Promise((r) => setTimeout(r, 2000));
-    return callGemini(systemPrompt, history, userMessage, FALLBACK_MODEL);
-  }
-  if (!resp.ok) {
+    if (resp.ok) {
+      const data = await resp.json();
+      const text: string | undefined =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        // SAFETY ブロック等で parts が空のときの丁寧なフォールバック
+        return "うまく汲み取れませんでした。もう少し具体的に教えてください（何を売りたいか、どんな会社に刺さりそうか）。";
+      }
+      return text.trim();
+    }
+
+    if (TRANSIENT.has(resp.status)) {
+      lastStatus = `HTTP ${resp.status}`;
+      await sleep(600 * (i + 1)); // 0.6s, 1.2s, 1.8s…
+      continue;
+    }
+
+    // 恒久エラー（400/403 等）は即座に、ただし生 JSON は出さない
     const t = await resp.text().catch(() => "");
-    throw new Error(`Gemini HTTP ${resp.status}: ${t.slice(0, 200)}`);
+    throw new Error(`Gemini HTTP ${resp.status}${t ? `: ${t.slice(0, 120)}` : ""}`);
   }
 
-  const data = await resp.json();
-  const text: string | undefined =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    // SAFETY ブロック等で parts が空のときの丁寧なフォールバック
-    return "うまく汲み取れませんでした。もう少し具体的に教えてください（何を売りたいか、どんな会社に刺さりそうか）。";
-  }
-  return text.trim();
+  throw new Error(
+    `Gemini が混み合っています（${lastStatus}）。数秒おいてもう一度送ってください。`
+  );
 }
