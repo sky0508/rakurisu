@@ -11,6 +11,8 @@ import type {
   StageDTO,
 } from "@/lib/api-types";
 import { NewJobModal } from "./NewJobModal";
+import { EntryPicker } from "./EntryPicker";
+import { ChatCompose } from "./ChatCompose";
 
 const STAGE_LABEL: Record<string, string> = {
   crawl: "母集団収集",
@@ -33,7 +35,7 @@ function stepCls(s: StageDTO): "ok" | "run" | "todo" {
 
 export function Console() {
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [mode, setMode] = useState<null | "pick" | "form" | "chat">(null);
 
   const { data: queue, mutate: mutateQueue } = useSWR<QueueResponse>(
     "/api/jobs",
@@ -102,7 +104,7 @@ export function Console() {
             {queue?.runningCount ?? 0}
           </span>
           <span className="spacer" />
-          <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+          <button className="btn btn-primary" onClick={() => setMode("pick")}>
             ＋ 新規ジョブ
           </button>
         </div>
@@ -156,15 +158,24 @@ export function Console() {
         </div>
       </main>
 
+      <EntryPicker
+        open={mode === "pick"}
+        onClose={() => setMode(null)}
+        onPickForm={() => setMode("form")}
+        onPickChat={() => setMode("chat")}
+      />
+
       <NewJobModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        open={mode === "form"}
+        onClose={() => setMode(null)}
         onCreated={async (jobId) => {
-          setModalOpen(false);
+          setMode(null);
           setActiveId(jobId);
           await mutateQueue();
         }}
       />
+
+      <ChatCompose open={mode === "chat"} onClose={() => setMode(null)} />
     </div>
   );
 }

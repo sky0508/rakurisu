@@ -109,3 +109,7 @@ export type CreateJobInput = {
   brief?: string;
   recipeId?: string | null;
 };
+
+// ── 対話（与件分解の入口スライス） ──
+export type ChatMessage = { role: "user" | "model"; text: string };
+export type ChatReply = { reply: string };
