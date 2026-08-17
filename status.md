@@ -1,7 +1,7 @@
 ---
 name: rakurisu
 status: active
-next_action: 対話型・与件分解「入口スライス」を push 済み・Vercel 本番で対話稼働確認済み（2026-08-17）。次スライス = 要件カードの構造化ライブ更新 → N 仮説カード＋走らせ方選択 → 共通フォーム → `hypothesis_set_id`+`decomp` の DB 列 → worker の decompose_brief スキップ分岐 → 比較ビュー。旧・残タスク（worker Mac 常駐での従来フル E2E / 認証恒久方針 §11-2 / レシピ生成失敗時の手動編集・C/D API 化）は継続。
+next_action: 対話の頭脳リデザイン＋対話→リスト作成の一気通貫を実装・push 済み（2026-08-17・web のみ）。次 = Phase 2（構造化 decomp を worker に渡す精度厳密化＝`jobs.decomp` 列＋worker の decompose_brief スキップ分岐＋再デプロイ。これでパターンC完全排除も同時）／N 仮説→並列＋`hypothesis_set_id` 比較ビュー／専用作成プラン確認モーダル。旧・残タスク（worker Mac 常駐での従来フル E2E / 認証恒久方針 §11-2）は継続。計画=`~/.claude/plans/users-sorasasaki-desktop-inbox-cleansho-optimized-leaf.md`。
 due:
 last_touched: 2026-08-17
 ---
@@ -18,6 +18,16 @@ last_touched: 2026-08-17
 - **新規/変更**: `web/src/lib/gemini.ts`（新）/ `web/src/app/api/chat/route.ts`（新・maxDuration=60）/ `web/src/components/EntryPicker.tsx`（新）/ `web/src/components/ChatCompose.tsx`（新）/ `api-types.ts`（ChatMessage/ChatReply）/ `Console.tsx`（modalOpen→mode 二択）/ `globals.css`（picker/chat/bubble/reqcard）/ `.env.local.example`（GEMINI_API_KEY 追記）。
 - **検証済**: `npx tsc --noEmit` 0 / `pnpm build` 緑 / `/api/chat` 実 Gemini 往復（単発・history マルチターン・空 message 400）/ ブラウザ E2E（二択→対話→実往復で Move 1「現在地特定＋ペイン深掘り 3 点」挙動を確認）。GEMINI_API_KEY は `web/.env.local` に既存でローカル即動く。
 - **残（次スライス）**: 要件カードの構造化ライブ更新 / N 仮説カード＋走らせ方選択 / 共通フォーム / `hypothesis_set_id`+`decomp` の DB 列 / worker の decompose_brief スキップ分岐 / 比較ビュー。**本番で対話を使うなら Vercel env に `GEMINI_API_KEY` 追加が必要**。
+
+## 対話の頭脳リデザイン + 対話→リスト作成 一気通貫（2026-08-17・push 済み）
+対話まわりを大きく前進。**全て web 側のみ（schema/worker/デプロイ変更なし）**で push 済み（`62d659a`..`8a8f27d`）。
+- **スクロール修正**: `.chatbody` に `grid-template-rows: minmax(0,1fr)` ＋ `.chatmain` に `min-height:0`。器を86vh固定・中の対話だけスクロール（grid item が伸びて `.msgs` の overflow が発火しない罠）。
+- **対話を提案型に全面書き換え**（`SIGNAL_SYSTEM_PROMPT`）: 質問攻め → 「経験則に裏打ちされた仮説・選択肢を先出し、ユーザーは Yes/No で反応」。**役割分担 = 人間は 便益→業界/セグメント→規模 まで／AI がシグナル軸・ソースを自動導出**（[[feedback_two_meta_axes_brainstorm]]）。**最初の提案は業界/セグメント単位で先出し**（部署は抽象なので後段の到達絞り込みで使う）。
+- **営業プレイブック新規＝対話AIの頭脳の正本**: `docs/playbook.md`。Sora への think-aloud（UACJ案件）で抽出。**Layer 1 = 思考プロセス**（便益を1つ掴む→ニーズある業界を先出し→規模/到達で絞る→広ければ別リストで並列→AI がシグナル/ソース添える）＋各手の隠れルール。**Layer 2 = 到達の経験則**（1,000人以下=代表TELで到達しやすい／大手=部署・バイネーム必須／病院◎・美容クリニック△・化粧品×/コスメ○／有名ブランド商材は到達↑）。`gemini.ts` のプロンプトはこの写経（当面二重管理）。
+- **一気通貫（対話→要件抽出→作成プラン提示→ジョブ生成）**: フッタ「この要件でリスト作成へ」→ `/api/chat/extract`（新・Gemini JSONモード `callGeminiJson`）で構造化要件＋作成プラン抽出 → 要件カード確定＋プラン提示 →「この内容で作成を開始」で **レシピ無しジョブ生成 → 既存 worker 自走経路に合流**。到達性由来の収集項目を `jobs.columns`（既存jsonb・db:push不要）に書込。`ChatCompose` の `onCreated` を `Console` で配線（キュー更新＋詳細を開く）。
+- **パターンC回避**: 実機で worker の `decompose_brief` が「複数業界横断×動的シグナル」を**パターンC（1社ずつWebリサーチ）と判定→現フェーズ未対応で error**（LH-A05 で確認）。対策＝対話/抽出プロンプトに**「パイプライン制約」=単一ソースで一覧化できる A/B の形に寄せる**を追加（複数業界→最有望1業界、求人→1ポータル検索一覧）。実Geminiで「家電・食品・化粧品3業界」→「食品メーカー1業界＋求人ポータル」に自動narrowing確認。**完全排除は worker のパターン判定側＝Phase 2（worker 再デプロイ）**。
+- **新規/変更**: `docs/playbook.md`(新) / `web/src/app/api/chat/extract/route.ts`(新) / `gemini.ts`(EXTRACT_SYSTEM_PROMPT＋callGeminiJson＋提案型書換＋パイプライン制約) / `ChatCompose.tsx`(一気通貫UI) / `Console.tsx`(onCreated配線) / `api-types.ts`(ExtractResult) / `api/jobs`＋`queries.ts`(columns受け皿) / `globals.css`(スクロール)。**tsc 0 / build 緑 / `/api/chat/extract` 実Gemini通貫確認済**。
+- **残（Phase 2）**: 構造化 decomp を worker に渡す精度厳密化（`jobs.decomp` 列＋worker スキップ分岐＋再デプロイ → パターンC完全排除も同時）／N仮説→並列＋`hypothesis_set_id` 比較ビュー／専用作成プラン確認モーダル。計画=`~/.claude/plans/users-sorasasaki-desktop-inbox-cleansho-optimized-leaf.md`。
 
 ## AI 与件分解（Gemini + Brave）実装・実コール検証済み（2026-08-03）
 対話版 lead-harvest の「頭脳」（Claude Code=サブスク定額が担当）を、ヘッドレス worker から使えるよう **Gemini 2.5 Flash + Brave Search** で外付け。従量課金の Claude API は不採用（Sora 判断）。**スコープ = パターン A（与件→ソース発見→レシピ自動生成）**。C/D per-company エンリッチは後段。
