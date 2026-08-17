@@ -108,8 +108,27 @@ export type CreateJobInput = {
   compliance?: string;
   brief?: string;
   recipeId?: string | null;
+  columns?: string[];
 };
 
 // ── 対話（与件分解の入口スライス） ──
 export type ChatMessage = { role: "user" | "model"; text: string };
 export type ChatReply = { reply: string };
+
+/** 対話から抽出した構造化要件 + 作成プラン（/api/chat/extract の戻り値）。 */
+export type ExtractResult = {
+  card: {
+    product: string;
+    benefit: string;
+    segment: string;
+    reach: string;
+    dept: string;
+    signal: string;
+  };
+  brief: string;
+  title: string;
+  useCase: string;
+  target: number;
+  columns: string[];
+  planSummary: string;
+};

@@ -175,7 +175,15 @@ export function Console() {
         }}
       />
 
-      <ChatCompose open={mode === "chat"} onClose={() => setMode(null)} />
+      <ChatCompose
+        open={mode === "chat"}
+        onClose={() => setMode(null)}
+        onCreated={async (jobId) => {
+          setMode(null);
+          setActiveId(jobId);
+          await mutateQueue();
+        }}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { postJson } from "@/lib/fetcher";
-import type { ChatMessage, ChatReply } from "@/lib/api-types";
+import type { ChatMessage, ChatReply, ExtractResult } from "@/lib/api-types";
 
 /**
  * 要件カードに出す分解チェーン（本スライスは枠のみ・抽出は次スライス）。
@@ -27,23 +27,29 @@ const OPENING =
 export function ChatCompose({
   open,
   onClose,
+  onCreated,
 }: {
   open: boolean;
   onClose: () => void;
-  // 次スライスで N 仮説 → ジョブ生成の合流に使う（本スライスでは未使用）
+  // 対話で固めた要件 → ジョブ生成の合流に使う
   onCreated?: (jobId: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [plan, setPlan] = useState<ExtractResult | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [creating, setCreating] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [messages, sending]);
+  }, [messages, sending, plan]);
 
   if (!open) return null;
+
+  const hasReply = messages.some((m) => m.role === "model");
 
   async function send() {
     const text = input.trim();
@@ -60,6 +66,43 @@ export function ChatCompose({
       setErr(e instanceof Error ? e.message : "送信に失敗しました");
     } finally {
       setSending(false);
+    }
+  }
+
+  // 対話から要件を抽出し、作成プランを提示する（まだジョブは作らない）。
+  async function extract() {
+    if (extracting || !hasReply) return;
+    setErr(null);
+    setExtracting(true);
+    try {
+      const res = await postJson<ExtractResult>("/api/chat/extract", {
+        history: messages,
+      });
+      setPlan(res);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "要件の抽出に失敗しました");
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  // 提示した作成プランでジョブを生成する（レシピ無し → worker が自走）。
+  async function create() {
+    if (!plan || creating) return;
+    setErr(null);
+    setCreating(true);
+    try {
+      const res = await postJson<{ job: { id: string } }>("/api/jobs", {
+        title: plan.title,
+        useCase: plan.useCase,
+        target: plan.target,
+        brief: plan.brief,
+        columns: plan.columns,
+      });
+      onCreated?.(res.job.id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "ジョブの作成に失敗しました");
+      setCreating(false);
     }
   }
 
@@ -97,6 +140,26 @@ export function ChatCompose({
                   <div className="bubble typing">考え中…</div>
                 </div>
               )}
+              {extracting && (
+                <div className="msg model">
+                  <div className="bubble typing">要件を整理中…</div>
+                </div>
+              )}
+              {plan && (
+                <div className="msg model">
+                  <div
+                    className="bubble"
+                    style={{
+                      borderLeft: "3px solid var(--run-tx)",
+                      background: "#fbfaf8",
+                    }}
+                  >
+                    <strong>この内容でリスト作成します</strong>
+                    {"\n\n"}
+                    {plan.planSummary}
+                  </div>
+                </div>
+              )}
             </div>
             {err && (
               <div className="note flag" style={{ margin: "0 16px 4px" }}>
@@ -128,23 +191,56 @@ export function ChatCompose({
 
           <aside className="reqcard">
             <div className="rc-h">要件（対話から抽出）</div>
-            {CHAIN.map((c) => (
-              <div className="rc-row" key={c.k}>
-                <span className="rc-k">{c.label}</span>
-                <span className="rc-v muted">会話から抽出予定</span>
-              </div>
-            ))}
-            <div className="rc-note">※ このスライスは枠のみ。抽出のライブ更新は次で実装。</div>
+            {CHAIN.map((c) => {
+              const v = plan?.card[c.k as keyof ExtractResult["card"]] ?? "";
+              return (
+                <div className="rc-row" key={c.k}>
+                  <span className="rc-k">{c.label}</span>
+                  <span className={`rc-v ${plan ? "" : "muted"}`}>
+                    {plan ? v || "—" : "会話から抽出予定"}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="rc-note">
+              {plan
+                ? "※ 対話から抽出した要件。「作成を開始」でジョブ化します。"
+                : "※「この要件でリスト作成へ」で対話から要件を抽出します。"}
+            </div>
           </aside>
         </div>
 
         <div className="chatfoot">
-          <button className="btn" onClick={onClose}>
+          <button className="btn" onClick={onClose} disabled={creating}>
             閉じる
           </button>
-          <button className="btn btn-primary" disabled title="次スライスで有効化">
-            この要件で仮説を出す →
-          </button>
+          {!plan ? (
+            <button
+              className="btn btn-primary"
+              onClick={() => void extract()}
+              disabled={extracting || !hasReply}
+              title={hasReply ? undefined : "AI と少なくとも 1 往復してから"}
+            >
+              {extracting ? "整理中…" : "この要件でリスト作成へ →"}
+            </button>
+          ) : (
+            <>
+              <button
+                className="btn"
+                onClick={() => setPlan(null)}
+                disabled={creating}
+              >
+                作り直す
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => void create()}
+                disabled={creating}
+              >
+                {creating ? "作成中…" : "この内容で作成を開始"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

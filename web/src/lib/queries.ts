@@ -292,6 +292,7 @@ export async function createJob(input: CreateJobInput) {
       compliance: input.compliance ?? null,
       brief: input.brief ?? null,
       recipeId: input.recipeId ?? null,
+      columns: input.columns ?? null,
       pattern,
       state,
     })

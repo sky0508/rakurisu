@@ -67,31 +67,58 @@ export const SIGNAL_SYSTEM_PROMPT = `あなたは B2B リード収集（営業�
 - 実在のサイト名・URL を断定しない（「◯◯の sitemap にあります」等は言わない）。実ソース発見は後段の別システムが担うので、あなたはソースの「種類」までに留める。
 - シグナル軸/ソースの選択を相手に丸投げしない（それはあなたの仕事）。`;
 
+/** 対話の頭脳（抽出）: 会話全体から、リスト作成ジョブに渡す構造化要件 + 作成プラン文を JSON で返す。 */
+export const EXTRACT_SYSTEM_PROMPT = `あなたは B2B リード収集の対話から、リスト作成ジョブに渡す「構造化要件」と「作成プラン」を抽出する担当です。これまでの会話（営業リストの与件を固める対話）を読み、下記スキーマの JSON だけを返してください。前置き・説明・コードフェンスは不要。
+
+# 抽出の指針
+- 会話で固まった方向を最優先で反映する。曖昧な部分は営業プレイブックの経験則で最も妥当なデフォルトを埋める（下記）。
+- brief は worker が再分解する精密なターゲット文。会話の結論を 1〜2 文で具体的に（業界/セグメント + 規模 + 観測シグナルを含める）。例:「従業員1,000人以下の食品メーカーのうち、商品開発・企画・研究開発職を募集している会社」。
+- columns（収集項目）は用途と到達性から決める。架電営業なら基本「会社名 / 本社代表電話 / 都道府県 / 業種」。大手も対象に含む場合のみ「担当部署 / 担当者名」を足す（従業員1,000人以下中心なら不要）。
+- card は要件カードに出す短い文字列（各 20 字程度）。dept が無ければ空文字。
+- 実在のサイト名・URL は書かない。signal は「求人ポータル」「業界団体名簿」等のソース"種類"までに留める。
+
+# 到達の経験則（デフォルト補完に使う）
+- 従業員1,000人以下 → 代表TELで到達しやすい。大手を含めると 部署/担当者名 が必要。
+
+# 出力スキーマ（この形の JSON のみ・キーは英語のまま）
+{
+  "card": {
+    "product": "売りたいもの",
+    "benefit": "独自便益",
+    "segment": "ニーズのある業界/セグメント",
+    "reach": "規模・到達（例: 従業員1,000人以下）",
+    "dept": "効く部署・職種（無ければ空文字）",
+    "signal": "観測シグナルとソース種類（例: 企画職の求人／求人ポータル）"
+  },
+  "brief": "worker が再分解する精密ターゲット文",
+  "title": "ジョブ名（20字程度・例: 食品メーカー×商品開発求人）",
+  "useCase": "架電営業",
+  "target": 80,
+  "columns": ["会社名", "本社代表電話", "都道府県", "業種"],
+  "planSummary": "『こういうプランで作成します』の本文。ターゲット・観測シグナル・ソース種類・規模/到達・収集項目・目標件数を箇条書き交じりで簡潔に。最後に、試走で精度を見て調整する旨を一言添える。"
+}`;
+
 /** 一時的（リトライで直る）な HTTP ステータス。429=枠超過, 500/502/503/504=過負荷。 */
 const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * 1 往復の返答を返す。history は過去ターン（user/model 交互）、userMessage は最新の発話。
+ * 内部: systemInstruction + contents + generationConfig で 1 回分の応答テキストを返す。
  * 一時的な 5xx / 429 はバックオフしてリトライし、途中で flash → flash-lite に落とす
- * （503 UNAVAILABLE の過負荷や無料枠超過を対話中に極力見せないため）。
+ * （503 UNAVAILABLE の過負荷や無料枠超過を極力見せないため）。text 空（SAFETY 等）は null。
  */
-export async function callGemini(
+async function callGeminiCore(
   systemPrompt: string,
-  history: ChatTurn[],
-  userMessage: string
-): Promise<string> {
+  contents: unknown[],
+  generationConfig: Record<string, unknown>
+): Promise<string | null> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY 未設定");
 
-  const contents = [
-    ...history.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
-    { role: "user", parts: [{ text: userMessage }] },
-  ];
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
-    generationConfig: { temperature: 0.3 },
+    generationConfig,
   });
 
   // 最大 4 回: 前半は flash、後半は flash-lite（別キャパシティ）に落とす
@@ -118,11 +145,7 @@ export async function callGemini(
       const data = await resp.json();
       const text: string | undefined =
         data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        // SAFETY ブロック等で parts が空のときの丁寧なフォールバック
-        return "うまく汲み取れませんでした。もう少し具体的に教えてください（何を売りたいか、どんな会社に刺さりそうか）。";
-      }
-      return text.trim();
+      return text ? text.trim() : null;
     }
 
     if (TRANSIENT.has(resp.status)) {
@@ -139,4 +162,51 @@ export async function callGemini(
   throw new Error(
     `Gemini が混み合っています（${lastStatus}）。数秒おいてもう一度送ってください。`
   );
+}
+
+/** 1 往復の返答を返す（対話用）。history は過去ターン、userMessage は最新の発話。 */
+export async function callGemini(
+  systemPrompt: string,
+  history: ChatTurn[],
+  userMessage: string
+): Promise<string> {
+  const contents = [
+    ...history.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
+    { role: "user", parts: [{ text: userMessage }] },
+  ];
+  const text = await callGeminiCore(systemPrompt, contents, { temperature: 0.3 });
+  return (
+    text ??
+    "うまく汲み取れませんでした。もう少し具体的に教えてください（何を売りたいか、どんな会社に刺さりそうか）。"
+  );
+}
+
+/**
+ * JSON モードで構造化出力を返す（抽出用）。responseMimeType=application/json + パース。
+ * instruction は最後に足す user 指示（「この会話から JSON で返して」等）。
+ */
+export async function callGeminiJson<T = unknown>(
+  systemPrompt: string,
+  history: ChatTurn[],
+  instruction: string
+): Promise<T> {
+  const contents = [
+    ...history.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
+    { role: "user", parts: [{ text: instruction }] },
+  ];
+  const text = await callGeminiCore(systemPrompt, contents, {
+    temperature: 0.2,
+    responseMimeType: "application/json",
+  });
+  if (!text) throw new Error("抽出結果が空でした。もう少し会話を進めてから試してください。");
+  // 念のためコードフェンスを剥がす（JSON モードでも稀に付く）
+  const cleaned = text
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    throw new Error("抽出結果の JSON 解析に失敗しました。");
+  }
 }

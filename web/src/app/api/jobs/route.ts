@@ -16,6 +16,7 @@ const CreateSchema = z.object({
   compliance: z.string().optional(),
   brief: z.string().optional(),
   recipeId: z.string().uuid().nullish(),
+  columns: z.array(z.string()).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
     compliance: parsed.data.compliance,
     brief: parsed.data.brief,
     recipeId: parsed.data.recipeId ?? null,
+    columns: parsed.data.columns,
   });
   return NextResponse.json({ job }, { status: 201 });
 }
