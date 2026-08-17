@@ -1,15 +1,17 @@
 ---
 name: rakurisu
 status: active
-next_action: AI 与件分解（Gemini+Brave）実装・実コール検証済み・push 済み（2026-08-03）。web 変更は Vercel 自動デプロイ。残 = ① **worker を Mac 常駐起動**（`cd worker && .venv/bin/python run_worker.py`・GEMINI/BRAVE キー投入済み）→ UI からレシピ「未選択」で与件を入れて起票 → 分解→レシピ生成→dryrun 自走 → GO 待ち画面で本番 GO の**フル E2E をSoraがUIで実走**（新規ソースは実クロールが走る）② 認証恒久方針の確定（spec §11-2）③ 精度改善（レシピ生成失敗時の UI 手動編集・再分解、C/D の API 化は後段）。
+next_action: 対話型・与件分解「入口スライス」を push 済み・Vercel 本番で対話稼働確認済み（2026-08-17）。次スライス = 要件カードの構造化ライブ更新 → N 仮説カード＋走らせ方選択 → 共通フォーム → `hypothesis_set_id`+`decomp` の DB 列 → worker の decompose_brief スキップ分岐 → 比較ビュー。旧・残タスク（worker Mac 常駐での従来フル E2E / 認証恒久方針 §11-2 / レシピ生成失敗時の手動編集・C/D API 化）は継続。
 due:
-last_touched: 2026-08-08
+last_touched: 2026-08-17
 ---
 
 # ラクリス（lead-harvest webapp）— status
 
-## 対話型・与件分解「入口スライス」実装（2026-08-08）
-ふわっとした与件を対話でシグナルに落とし込む機能の**第 1 スライス（入口＋対話のガワ）**を実装・E2E 検証済み（ローカル）。push・Vercel は未。
+## 対話型・与件分解「入口スライス」実装 → 本番稼働（2026-08-08 実装 / 2026-08-17 デプロイ）
+ふわっとした与件を対話でシグナルに落とし込む機能の**第 1 スライス（入口＋対話のガワ）**を実装・E2E 検証・**push 済み → Vercel 本番で対話稼働確認済み**（Sora が Vercel env に `GEMINI_API_KEY` 追加）。コミット: 全体 spec `2560efc` / 入口スライス `b608eaa` / 503 リトライ修正 `b25efd0`。
+- **本番運用の前提**: Vercel env `GEMINI_API_KEY` 追加済み（未追加だと `/api/chat` が「GEMINI_API_KEY 未設定」502）。ローカルは `web/.env.local` にあり即動く。
+- **503/429 対策（`b25efd0`）**: `callGemini` を最大 4 回バックオフ再試行 + 前半 flash → 後半 flash-lite フォールバックに変更。503 UNAVAILABLE（Gemini 過負荷）を対話中に極力見せない。失敗時は生 JSON でなく読みやすいメッセージ。
 - **要件定義（brainstorming 完了）**: `docs/spec-dialogue-decompose.md`（全体像）＋ `docs/spec-dialogue-entry.md`（本スライス）。設計の核 = lead-harvest の Stage -2/-1/0（signal-catalog）を対話 UI に移植。落とし込みロジック = 現在地特定 → ペイン→シグナル変換(7軸) → ガードレール3つ → N 仮説。出口 = 1 仮説=1 ジョブ / 走らせ方選択 / `hypothesis_set_id` グルーピング（次スライス）。
 - **本スライスのスコープ**: 入口二択（決まってる→従来フォーム / ふわっと→対話）＋ 対話画面の器（左メッセージ＋入力・右 要件カード枠）＋ `/api/chat` 同期 Gemini 1 往復。**シグナル頭脳の構造化抽出・N 仮説・ジョブ生成・DB 変更・worker 変更は次スライス**。
 - **アーキ**: 対話は web 側同期 Gemini（`web/src/lib/gemini.ts` = worker `decompose.py` の `_gemini_json` を TS 写経・SDK 無し fetch 直叩き・`x-goog-api-key` ヘッダ・429 で flash→flash-lite）。実ソース発見は既存 worker のまま（対話は"方向づけ"まで＝Level 1、実 URL 断定禁止で幻覚回避）。
