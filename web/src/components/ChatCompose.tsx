@@ -6,14 +6,14 @@ import type { ChatMessage, ChatReply } from "@/lib/api-types";
 
 /**
  * 要件カードに出す分解チェーン（本スライスは枠のみ・抽出は次スライス）。
- * playbook.md の思考プロセス（便益→部署→業種→規模）に対応。シグナル/ソースは AI 自動導出。
+ * playbook.md の思考プロセス（便益→業界/セグメント→規模→部署）に対応。シグナル/ソースは AI 自動導出。
  */
 const CHAIN = [
   { k: "product", label: "売りたいもの" },
   { k: "benefit", label: "独自便益" },
-  { k: "dept", label: "効く部署・職種" },
-  { k: "industry", label: "中心業種" },
+  { k: "segment", label: "ニーズのある業界・セグメント" },
   { k: "reach", label: "規模・到達" },
+  { k: "dept", label: "部署・バイネーム（到達用）" },
   { k: "signal", label: "シグナル/ソース（AI導出）" },
 ];
 
