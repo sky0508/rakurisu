@@ -912,11 +912,15 @@ td.tel {
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 280px;
+  /* 行を器の高さに固定（minmax の 0 が子の overflow-scroll を可能にする）。
+     これが無いと行が auto でメッセージ量に応じて伸び、.msgs のスクロールが発火しない。 */
+  grid-template-rows: minmax(0, 1fr);
 }
 .chatmain {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0; /* grid item の既定 min-height:auto を無効化し、.msgs にスクロールを渡す */
   border-right: 1px solid var(--line);
 }
 .msgs {

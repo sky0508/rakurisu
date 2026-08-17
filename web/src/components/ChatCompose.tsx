@@ -4,18 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { postJson } from "@/lib/fetcher";
 import type { ChatMessage, ChatReply } from "@/lib/api-types";
 
-/** 要件カードに出す分解チェーン（本スライスは枠のみ・抽出は次スライス）。 */
+/**
+ * 要件カードに出す分解チェーン（本スライスは枠のみ・抽出は次スライス）。
+ * playbook.md の思考プロセス（便益→部署→業種→規模）に対応。シグナル/ソースは AI 自動導出。
+ */
 const CHAIN = [
   { k: "product", label: "売りたいもの" },
-  { k: "pain", label: "ペイン" },
-  { k: "signal", label: "シグナル軸" },
-  { k: "source", label: "ソース種類" },
-  { k: "pattern", label: "パターン" },
-  { k: "narrow", label: "絞り込み軸" },
+  { k: "benefit", label: "独自便益" },
+  { k: "dept", label: "効く部署・職種" },
+  { k: "industry", label: "中心業種" },
+  { k: "reach", label: "規模・到達" },
+  { k: "signal", label: "シグナル/ソース（AI導出）" },
 ];
 
 const OPENING =
-  "リスト作成の要件を一緒に固めましょう。まずは「何を・誰に売りたいか」を、ざっくりで大丈夫なので教えてください。";
+  "リスト作成の要件を一緒に固めましょう。まずは「何を売りたいか」だけ、ざっくり教えてください。そこから「それが刺さりそうな相手」はこちらから提案していきます。";
 
 /**
  * 与件を対話で固める画面（幅広テイクオーバー）。
