@@ -1132,3 +1132,26 @@ td.tel {
     max-height: 34vh;
   }
 }
+
+/* ── 作成したリスト: 全行プレビュー表 ── */
+.listtbl {
+  min-width: 720px;
+}
+.listtbl th.rownum,
+.listtbl td.rownum {
+  width: 40px;
+  text-align: right;
+  color: var(--ink2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.listtbl td {
+  max-width: 340px;
+  white-space: normal;
+  word-break: break-word;
+  vertical-align: top;
+}
+.listtbl td.tel {
+  white-space: nowrap;
+  max-width: none;
+}

@@ -6,6 +6,7 @@ import { fetcher, postJson } from "@/lib/fetcher";
 import { RAKURISU_ICON } from "@/lib/brand";
 import type {
   EventDTO,
+  ExtractResult,
   JobDetail,
   QueueResponse,
   StageDTO,
@@ -13,6 +14,21 @@ import type {
 import { NewJobModal } from "./NewJobModal";
 import { EntryPicker } from "./EntryPicker";
 import { ChatCompose } from "./ChatCompose";
+import { DemoProgress } from "./DemoProgress";
+import { SavedLists } from "./SavedLists";
+import { DEMO_LISTS, type DemoList } from "@/data/demo-lists";
+
+// 展示デモモード: NEXT_PUBLIC_EXHIBITION=1 で worker を呼ばず演出→格納リストに着地。
+const EXHIBITION = process.env.NEXT_PUBLIC_EXHIBITION === "1";
+
+/** 対話の要件から、着地させる格納リストを選ぶ（合致が無ければ先頭）。 */
+function matchList(plan: ExtractResult): DemoList {
+  const hay = `${plan.title} ${plan.brief} ${plan.card.product} ${plan.card.segment}`;
+  const found = DEMO_LISTS.find((l) =>
+    l.title.split(/[×（(・\s]/).some((tok) => tok.length >= 2 && hay.includes(tok))
+  );
+  return found ?? DEMO_LISTS[0];
+}
 
 const STAGE_LABEL: Record<string, string> = {
   crawl: "母集団収集",
@@ -33,9 +49,47 @@ function stepCls(s: StageDTO): "ok" | "run" | "todo" {
   return "todo";
 }
 
+type DemoRun = { base: DemoList; title: string; useCase: string; target: number };
+
 export function Console() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [mode, setMode] = useState<null | "pick" | "form" | "chat">(null);
+
+  // 展示デモ: 画面切替と格納リスト
+  const [view, setView] = useState<"jobs" | "lists">("jobs");
+  const [demo, setDemo] = useState<DemoRun | null>(null);
+  const [createdLists, setCreatedLists] = useState<DemoList[]>([]);
+  const [newIds, setNewIds] = useState<string[]>([]);
+  const [listSelectedId, setListSelectedId] = useState<string | null>(null);
+
+  const allLists = [...createdLists, ...DEMO_LISTS];
+
+  function onDemoCreate(plan: ExtractResult) {
+    setMode(null);
+    setDemo({
+      base: matchList(plan),
+      title: plan.title || "作成リスト",
+      useCase: plan.useCase || "架電",
+      target: plan.target || 0,
+    });
+  }
+
+  function onDemoDone() {
+    if (!demo) return;
+    const created: DemoList = {
+      ...demo.base,
+      id: `session-${Date.now()}`,
+      title: demo.title || demo.base.title,
+      useCase: demo.useCase || demo.base.useCase,
+      target: demo.target || demo.base.target,
+      createdAt: new Date().toISOString(),
+    };
+    setCreatedLists((ls) => [created, ...ls]);
+    setNewIds((ids) => [created.id, ...ids]);
+    setListSelectedId(created.id);
+    setDemo(null);
+    setView("lists");
+  }
 
   const { data: queue, mutate: mutateQueue } = useSWR<QueueResponse>(
     "/api/jobs",
@@ -74,15 +128,22 @@ export function Console() {
         <div className="navsec">
           <div className="navlbl">ワークスペース</div>
           <nav className="nav">
-            <button className="on">
+            <button
+              className={view === "jobs" ? "on" : ""}
+              onClick={() => setView("jobs")}
+            >
               <span className="ico">▤</span>ジョブ
               <span className="badge">{jobs.length}</span>
             </button>
             <button>
               <span className="ico">◷</span>実行ログ
             </button>
-            <button>
-              <span className="ico">▦</span>納品シート
+            <button
+              className={view === "lists" ? "on" : ""}
+              onClick={() => setView("lists")}
+            >
+              <span className="ico">▦</span>作成したリスト
+              <span className="badge">{allLists.length}</span>
             </button>
             <button>
               <span className="ico">☰</span>レシピ
@@ -97,6 +158,15 @@ export function Console() {
       </aside>
 
       <main className="main">
+        {view === "lists" ? (
+          <SavedLists
+            lists={allLists}
+            newIds={newIds}
+            key={listSelectedId ?? "lists"}
+            initialSelectedId={listSelectedId}
+          />
+        ) : (
+          <>
         <div className="topbar">
           <h1>ジョブ</h1>
           <span className="sub num">
@@ -156,6 +226,8 @@ export function Console() {
           ラクリス（lead-harvest console）／ A/B パターンは純 Python で LLM 0
           トークン。実行は Python ワーカーが Neon 経由で担う。
         </div>
+          </>
+        )}
       </main>
 
       <EntryPicker
@@ -178,12 +250,24 @@ export function Console() {
       <ChatCompose
         open={mode === "chat"}
         onClose={() => setMode(null)}
+        onDemoCreate={EXHIBITION ? onDemoCreate : undefined}
         onCreated={async (jobId) => {
           setMode(null);
           setActiveId(jobId);
           await mutateQueue();
         }}
       />
+
+      {demo && (
+        <DemoProgress
+          title={demo.title}
+          useCase={demo.useCase}
+          target={demo.target}
+          base={demo.base}
+          onDone={onDemoDone}
+          onCancel={() => setDemo(null)}
+        />
+      )}
     </div>
   );
 }

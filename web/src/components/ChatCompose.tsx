@@ -28,11 +28,14 @@ export function ChatCompose({
   open,
   onClose,
   onCreated,
+  onDemoCreate,
 }: {
   open: boolean;
   onClose: () => void;
   // 対話で固めた要件 → ジョブ生成の合流に使う
   onCreated?: (jobId: string) => void;
+  // 展示デモモード: worker を呼ばず、固めた要件で演出→格納リストへ着地
+  onDemoCreate?: (plan: ExtractResult) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -89,6 +92,11 @@ export function ChatCompose({
   // 提示した作成プランでジョブを生成する（レシピ無し → worker が自走）。
   async function create() {
     if (!plan || creating) return;
+    // 展示デモ: worker を呼ばず、演出→格納リストへ（Gemini も消費しない）
+    if (onDemoCreate) {
+      onDemoCreate(plan);
+      return;
+    }
     setErr(null);
     setCreating(true);
     try {
